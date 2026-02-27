@@ -9,7 +9,7 @@ So keeping short note for myself.
 ```bash
 dotnet publish -c Release -r linux-x64 --self-contained true
 ssh clientportal 'systemctl stop clientportal'
-rsync -avz --delete Web/bin/Release/net10.0/linux-x64/publish/ clientportal:~/clientportal/
+rsync -vz --delete --recursive Web/bin/Release/net10.0/linux-x64/publish/ clientportal:/opt/clientportal/
 ssh clientportal 'systemctl clientportal'
 ```
 
@@ -50,7 +50,7 @@ What we are going to do is to stop service, rsync fresh build, start service bac
 ssh clientportal 'systemctl stop clientportal'
 
 # 2. rsync our build
-rsync -avz --delete Web/bin/Release/net10.0/linux-x64/publish/ clientportal:~/clientportal/
+rsync -vz --delete --recursive Web/bin/Release/net10.0/linux-x64/publish/ clientportal:/opt/clientportal/
 
 # 3. start service
 ssh clientportal 'systemctl clientportal'
@@ -62,7 +62,7 @@ See [Systemd.md](Systemd.md) to see how to configure service.
 
 If service is not started and you do not want to bother with journalctl just ssh to the verver
 
-Navigate to ~/clientportal
+Navigate to /opt/clientportal
 
 > Do not forget about environment variables, but if you are using `appsettings.Production.json` it will be copied as well
 
