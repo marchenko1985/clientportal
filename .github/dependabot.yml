@@ -1,0 +1,11 @@
+version: 2
+updates:
+  - package-ecosystem: "nuget"
+    schedule:
+      interval: "monthly"
+  - package-ecosystem: "dotnet-sdk"
+    schedule:
+      interval: "monthly"
+  - package-ecosystem: "github-actions"
+    schedule:
+      interval: "monthly"
