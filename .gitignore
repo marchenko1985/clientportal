@@ -2,3 +2,5 @@ bin
 obj
 .idea
 *.sln.DotSettings.user
+appsettings.Development.json
+appsettings.Production.json

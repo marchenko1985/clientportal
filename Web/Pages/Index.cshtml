@@ -1,0 +1,71 @@
+@page
+@using Web
+@inject Session Session
+
+@section Head {
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+  </style>
+}
+
+<table>
+  <caption>
+    <img src="https://ndcdyn.interactivebrokers.com/images/common/logos/ibkr/interactive-brokers.svg"
+         referrerpolicy="no-referrer" alt="Interactive Brokers" width="200"/>
+  </caption>
+  <tbody>
+  <tr title="Current state of our session and last time it was updated.">
+    <td colspan="2">
+      <b>@Session.State</b>
+      <small>@Session.LastPingTime</small>
+    </td>
+  </tr>
+  <tr title="Are we healthy, connected, authenticated or not.">
+    <td>
+      @await Html.PartialAsync("_BoolIndicator", Session.Healthy)
+    </td>
+    <td>healthy</td>
+  </tr>
+  <tr title="Did we initialize session and retrieve live session token or not.">
+    <td>
+      @await Html.PartialAsync("_BoolIndicator", !string.IsNullOrEmpty(Session.LiveSessionToken))
+    </td>
+    <td>token</td>
+  </tr>
+  <tr title="Returns whether your brokerage session is authenticated or not.">
+    <td>
+      @await Html.PartialAsync("_BoolIndicator", Session.LastTickleResponse?.Server.AuthenticationStatus.Authenticated)
+    </td>
+    <td>authenticated</td>
+  </tr>
+  <tr title="Returns whether you are connected to the gateway or not.">
+    <td>
+      @await Html.PartialAsync("_BoolIndicator", Session.LastTickleResponse?.Server.AuthenticationStatus.Connected)
+    </td>
+    <td>connected</td>
+  </tr>
+  <tr title="Returns whether your brokerage session is fully established and ready to handle requests.\nSet to true when the login message is received from underlying brokerage infrastructure, indicating authentication is complete and account information is loaded.">
+    <td>
+      @await Html.PartialAsync("_BoolIndicator", Session.LastTickleResponse?.Server.AuthenticationStatus.Established)
+    </td>
+    <td>established</td>
+  </tr>
+  <tr title="Returns whether you have a competing brokerage session in another connection.">
+    <td>
+      @await Html.PartialAsync("_BoolIndicator", Session.LastTickleResponse?.Server.AuthenticationStatus.Competing)
+    </td>
+    <td>competing</td>
+  </tr>
+  </tbody>
+</table>
