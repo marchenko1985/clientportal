@@ -35,11 +35,11 @@ All values live under the `Config` JSON key in `appsettings.json`. See [Config.m
 
 Secrets are kept out of source control using environment-specific config files:
 
-| File | Purpose |
-|------|---------|
-| `appsettings.json` | Committed — non-secret defaults (timing, resilience, routes) |
-| `appsettings.Development.json` | Gitignored — local credentials |
-| `appsettings.Production.json` | Gitignored — production credentials |
+| File                           | Purpose                                                      |
+| ------------------------------ | ------------------------------------------------------------ |
+| `appsettings.json`             | Committed — non-secret defaults (timing, resilience, routes) |
+| `appsettings.Development.json` | Gitignored — local credentials                               |
+| `appsettings.Production.json`  | Gitignored — production credentials                          |
 
 In production, credentials can also be injected as environment variables (e.g. `Config__ConsumerKey`).
 
@@ -71,29 +71,31 @@ The app listens on plain HTTP (`http://127.0.0.1:5000`); nginx handles TLS termi
 
 The following IBKR API routes are proxied and signed automatically. Add more under `ReverseProxy:Routes` in `appsettings.json`.
 
-| Route | Method | Description |
-|-------|--------|-------------|
-| `/v1/api/ws` | `GET` (WebSocket upgrade) | IBKR streaming market data WebSocket |
-| `/v1/api/tickle` | `POST` | Session keep-alive |
-| `/v1/api/iserver/secdef/search` | `GET` | Security definition search |
-| `/v1/api/iserver/marketdata/history` | `GET` | Market data history |
+| Route                                | Method                    | Description                          |
+| ------------------------------------ | ------------------------- | ------------------------------------ |
+| `/v1/api/ws`                         | `GET` (WebSocket upgrade) | IBKR streaming market data WebSocket |
+| `/v1/api/tickle`                     | `POST`                    | Session keep-alive                   |
+| `/v1/api/iserver/secdef/search`      | `GET`                     | Security definition search           |
+| `/v1/api/iserver/marketdata/history` | `GET`                     | Market data history                  |
 
 Internal endpoints (not proxied to IBKR):
 
-| Route | Description |
-|-------|-------------|
-| `/` | Session status page — shows live session state in a browser |
-| `/health` | ASP.NET health check |
-| `/session` | JSON session state (restricted to localhost by nginx) |
+| Route      | Description                                                 |
+| ---------- | ----------------------------------------------------------- |
+| `/`        | Session status page — shows live session state in a browser |
+| `/health`  | ASP.NET health check                                        |
+| `/session` | JSON session state (restricted to localhost by nginx)       |
 
 ---
 
 ## Reference docs
 
-| File | Contents |
-|------|----------|
-| [Config.md](Config.md) | All `appsettings.json` keys, credential extraction commands, appsettings layering |
-| [Signer.md](Signer.md) | IBKR two-layer OAuth protocol, DH exchange, before/after refactoring notes |
-| [Session.md](Session.md) | Session state machine, public properties, keep-alive details |
-| [Nginx.md](Nginx.md) | nginx site config, systemd unit, TLS setup, forwarded headers rationale |
-| [Test.md](Test.md) | Local testing — curl, WebSocket, browser |
+| File                     | Contents                                                                          |
+| ------------------------ | --------------------------------------------------------------------------------- |
+| [Config.md](Config.md)   | All `appsettings.json` keys, credential extraction commands, appsettings layering |
+| [Signer.md](Signer.md)   | IBKR two-layer OAuth protocol, DH exchange, before/after refactoring notes        |
+| [Session.md](Session.md) | Session state machine, public properties, keep-alive details                      |
+| [Nginx.md](Nginx.md)     | nginx site config, systemd unit, TLS setup, forwarded headers rationale           |
+| [Test.md](Test.md)       | Local testing — curl, WebSocket, browser                                          |
+
+Docs are maintained by Claude Code and/or Codex.
