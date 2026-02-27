@@ -12,8 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.WebHost.ConfigureKestrel(o => o.AddServerHeader = false); // do not tell we are written in dotnet
 
-var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>();
-ArgumentNullException.ThrowIfNull(allowedOrigins);
+var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ?? [];
 
 builder.Services.AddOptions<Config>().Bind(builder.Configuration.GetSection(nameof(Config))).PostConfigure(config =>
 {
@@ -22,7 +21,7 @@ builder.Services.AddOptions<Config>().Bind(builder.Configuration.GetSection(name
     config.PrivateSignature.ImportPkcs8PrivateKey(config.PrivateSignatureBytes, out _);
 }).ValidateOnStart();
 
-builder.Services.AddCors(options => options.AddPolicy("AllowedOrigins", policy => policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
+if (allowedOrigins.Length > 0) builder.Services.AddCors(options => options.AddPolicy("AllowedOrigins", policy => policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
 builder.Services.AddHealthChecks().AddCheck<HealthCheck>(nameof(HealthCheck));
 
 builder.Services.AddSingleton<Signer>();
@@ -90,26 +89,29 @@ var app = builder.Build();
 
 app.UseForwardedHeaders();
 
-app.UseCors("AllowedOrigins");
-// Reject websocket upgrade attempts from disallowed origins.
-// Built-in CORS middleware does not apply to the WebSocket upgrade handshake —
-// check Origin on the upgrade request and block if not allowed.
-// See: https://microsoft.github.io/reverse-proxy/articles/websocket.html
-//      https://learn.microsoft.com/aspnet/core/fundamentals/websockets
-app.Use(async (context, next) =>
+if (allowedOrigins.Length > 0)
 {
-    if (context.WebSockets.IsWebSocketRequest)
+    app.UseCors("AllowedOrigins");
+    // Reject websocket upgrade attempts from disallowed origins.
+    // Built-in CORS middleware does not apply to the WebSocket upgrade handshake —
+    // check Origin on the upgrade request and block if not allowed.
+    // See: https://microsoft.github.io/reverse-proxy/articles/websocket.html
+    //      https://learn.microsoft.com/aspnet/core/fundamentals/websockets
+    app.Use(async (context, next) =>
     {
-        var origin = context.Request.Headers.Origin.ToString();
-        if (string.IsNullOrEmpty(origin) || !allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
+        if (context.WebSockets.IsWebSocketRequest)
         {
-            context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            await context.Response.CompleteAsync();
-            return;
+            var origin = context.Request.Headers.Origin.ToString();
+            if (string.IsNullOrEmpty(origin) || !allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.CompleteAsync();
+                return;
+            }
         }
-    }
-    await next();
-});
+        await next();
+    });
+}
 
 app.UseStaticFiles();
 app.MapRazorPages();
