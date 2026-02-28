@@ -107,8 +107,44 @@ UseForwardedHeaders → UseCors → WebSocket origin check (inline middleware) �
 
 ---
 
+## Feed project
+
+WebSocket multiplexer that fans IBKR market data from one upstream connection to many browser clients.
+
+### Key services
+
+| File | Role |
+|---|---|
+| `Feed/Connection.cs` | `BackgroundService` — owns the single upstream IBKR WebSocket; reconnects with exponential back-off; publishes `connected`/`authenticated` events on `SystemMessages` channel |
+| `Feed/Snapshots.cs` | Thread-safe `(conid, field) → value` cache; deduplicates writes; publishes change events; supports `ClearAll()` after prolonged disconnect |
+| `Feed/Subscriptions.cs` | Per-client field tracking; shrinkable field union; `Action<int, string[]?>` callback fires after `UnsubscribeDelay` |
+| `Feed/Hub.cs` | `BackgroundService` — accepts browser WebSocket clients; batches ticks; broadcasts system events |
+| `Feed/Program.cs` | DI wiring; `/ws`, `/health`, `/status`, `/` endpoints; `FeedHealthCheck` |
+
+### Subscription protocol
+
+**Client → server** (raw text frames):
+- `smd+{conid}+{"fields":["31","84"]}` — subscribe
+- `umd+{conid}+{}` — unsubscribe
+
+**Server → client** (JSON envelope):
+- `{"topic":"connected","data":true/false}` — upstream connection change
+- `{"topic":"authenticated","data":true/false}` — upstream auth change
+- `{"topic":"batch","data":[{conid,field:val,…}]}` — market-data ticks
+
+### Reconnect / stale-cache behaviour
+
+After 3 consecutive upstream failures `Connection` calls `Snapshots.ClearAll()` to prevent new browser clients from seeing data that may be hours old.
+
+### Field-union shrink
+
+Each client's requested fields are tracked individually in `Subscriptions`. When a client disconnects the union is recomputed; if it shrank, `onDelayedChange(conid, newFields)` fires after `UnsubscribeDelay`. `null` newFields means full unsubscribe; non-null means `Connection.Subscribe` sends `umd`+`smd` with the smaller field list.
+
+---
+
 ## Reference docs
 
 - `Gateway/README.md` — Gateway project overview, proxied routes, running instructions
+- `Feed/README.md` — Feed project overview, architecture, wire protocol, endpoints
 - `Test.md` — curl and WebSocket smoke test commands
 - Implementation details (session lifecycle, OAuth signing, config fields) live as XML doc comments in `Gateway/Session.cs`, `Gateway/Signer.cs`, `Gateway/Config.cs`

@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>debug</title>
+    <style>
+      body {
+        font-family: monospace;
+        max-width: 45rem;
+        margin: 0 auto;
+        padding: 1rem;
+        height: 100vh;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <fieldset>
+      <legend>status</legend>
+      WS: <span id="ws-ind" class="indicator ind-unknown">connecting</span> Upstream: <span id="up-ind" class="indicator ind-unknown">unknown</span>
+    </fieldset>
+
+    <fieldset>
+      <legend>presets</legend>
+      <table>
+        <tbody>
+          <tr>
+            <td>conid</td>
+            <td>
+              <input id="conid-input" type="number" value="265598" />
+              <button onclick="document.getElementById('conid-input').value = '265598'">aapl</button>
+              <button onclick="document.getElementById('conid-input').value = '4815747'">nvda</button>
+              <button onclick="document.getElementById('conid-input').value = '320227571'">qqq</button>
+              <button onclick="document.getElementById('conid-input').value = '756733'">spy</button>
+            </td>
+          </tr>
+          <tr>
+            <td>fields</td>
+            <td>
+              <label><input type="checkbox" class="field" value="31" checked />31 (last)</label>
+              <label><input type="checkbox" class="field" value="82" />82 (change)</label>
+              <label><input type="checkbox" class="field" value="83" />83 (change %)</label>
+              <label><input type="checkbox" class="field" value="84" />84 (bid)</label>
+              <label><input type="checkbox" class="field" value="86" />86 (ask)</label>
+              <label><input type="checkbox" class="field" value="87" />87 (volume)</label>
+              <label><input type="checkbox" class="field" value="70" />70 (high)</label>
+              <label><input type="checkbox" class="field" value="71" />71 (low)</label>
+              <label><input type="checkbox" class="field" value="7308" />7308 (delta)</label>
+              <label><input type="checkbox" class="field" value="7309" />7309 (gamma)</label>
+              <label><input type="checkbox" class="field" value="7310" />7310 (theta)</label>
+              <label><input type="checkbox" class="field" value="7311" />7311 (vega)</label>
+              <label><input type="checkbox" class="field" value="7633" />7633 (iv)</label>
+            </td>
+          </tr>
+          <tr>
+            <td></td>
+            <td>
+              <button id="btn-subscribe">subscribe</button>
+              <button id="btn-unsubscribe">unsubscribe</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </fieldset>
+
+    <fieldset>
+      <legend>message</legend>
+      <div style="display: flex; gap: 0.5rem">
+        <input id="raw-input" type="text" placeholder='smd+265598+{"fields":["31"]}' style="flex: 1" />
+        <button id="btn-send">Send</button>
+      </div>
+    </fieldset>
+
+    <fieldset style="flex: 1; min-height: 0">
+      <legend>messages <button id="btn-clear">clear</button></legend>
+      <textarea id="log" cols="100" style="width: 100%; height: 100%; box-sizing: border-box" readonly></textarea>
+    </fieldset>
+
+    <script>
+      // DOM refs
+      const wsInd = document.getElementById("ws-ind");
+      const upInd = document.getElementById("up-ind");
+      const conidInput = document.getElementById("conid-input");
+      const fieldCbs = Array.from(document.querySelectorAll(".field"));
+      const rawInput = document.getElementById("raw-input");
+      const log = document.getElementById("log");
+
+      // Subscribe / Unsubscribe buttons
+      document.getElementById("btn-subscribe").addEventListener("click", () => {
+        rawInput.value = buildSubscribeMsg();
+      });
+
+      document.getElementById("btn-unsubscribe").addEventListener("click", () => {
+        rawInput.value = `umd+${conidInput.value.trim()}+{}`;
+      });
+
+      // Raw send
+      document.getElementById("btn-send").addEventListener("click", () => {
+        const msg = rawInput.value.trim();
+        if (msg) sendRaw(msg);
+      });
+
+      // Clear log
+      document.getElementById("btn-clear").addEventListener("click", () => {
+        log.value = "";
+      });
+
+      // Keep raw input in sync with form
+      conidInput.addEventListener("input", refreshRaw);
+      fieldCbs.forEach((cb) => cb.addEventListener("change", refreshRaw));
+
+      function buildSubscribeMsg() {
+        const conid = conidInput.value.trim();
+        const f = fieldCbs.filter((cb) => cb.checked).map((cb) => cb.value);
+        if (!conid || f.length === 0) return "";
+        return `smd+${conid}+${JSON.stringify({ fields: f })}`;
+      }
+
+      function refreshRaw() {
+        rawInput.value = buildSubscribeMsg();
+      }
+
+      // Logging
+      function logLine(prefix, text) {
+        const ts = new Date().toISOString().substring(11, 23);
+        log.value += `[${ts}] ${prefix} ${text}\n`;
+        log.scrollTop = log.scrollHeight;
+      }
+
+      // Indicator helpers
+      function setWsIndicator(text, color) {
+        wsInd.textContent = text;
+        wsInd.style.color = color;
+      }
+
+      function setUpIndicator(text, color) {
+        upInd.textContent = text;
+        upInd.style.color = color;
+      }
+
+      // Send helper
+      function sendRaw(msg) {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          logLine("WARN", "ws is not open");
+          return;
+        }
+        ws.send(msg);
+        logLine("OUT", msg);
+      }
+
+      // WebSocket
+      let ws = null;
+
+      function connectWs() {
+        setWsIndicator("connecting", "orange");
+        const scheme = location.protocol === "https:" ? "wss" : "ws";
+        ws = new WebSocket(`${scheme}://${location.host}/ws`);
+
+        ws.onopen = () => {
+          setWsIndicator("connected", "green");
+          logLine("OPEN", "websocket connected");
+          refreshRaw();
+        };
+
+        ws.onmessage = ({ data }) => {
+          handleMessage(data);
+        };
+
+        ws.onerror = () => {
+          setWsIndicator("error", "red");
+          logLine("ERR", "websocket error");
+        };
+
+        ws.onclose = () => {
+          setWsIndicator("closed", "gray");
+          setUpIndicator("unknown", "gray");
+          logLine("CLOSE", "websocket closed");
+        };
+      }
+
+      function handleMessage(raw) {
+        try {
+          const msg = JSON.parse(raw);
+          if (msg && typeof msg.topic === "string") {
+            const { topic, data } = msg;
+
+            if (topic === "connected") {
+              if (data) {
+                setUpIndicator("connected", "green");
+              } else {
+                setUpIndicator("disconnected", "red");
+              }
+              logLine("SYS", `upstream connected=${data}`);
+              return;
+            }
+
+            if (topic === "authenticated") {
+              if (data) {
+                setUpIndicator("authenticated", "green");
+              } else {
+                setUpIndicator("not authenticated", "red");
+              }
+              logLine("SYS", `upstream authenticated=${data}`);
+              return;
+            }
+
+            if (topic === "batch") {
+              logLine("IN ", JSON.stringify(data));
+              return;
+            }
+
+            logLine("IN ", raw);
+          } else {
+            logLine("IN ", raw);
+          }
+        } catch {
+          logLine("IN ", raw);
+        }
+      }
+
+      refreshRaw();
+      connectWs();
+    </script>
+  </body>
+</html>

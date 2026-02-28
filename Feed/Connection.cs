@@ -3,6 +3,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading.Channels;
 using Microsoft.Extensions.Options;
 
 namespace Feed;
@@ -37,8 +38,7 @@ namespace Feed;
 ///   <item>
 ///     <description>
 ///       <see cref="HeartbeatAsync"/> sends a <c>tic</c> frame at
-///       <see cref="Config.PingInterval"/> cadence to keep
-///       the connection alive.
+///       <see cref="Config.PingInterval"/> cadence to keep the connection alive.
 ///     </description>
 ///   </item>
 ///   <item>
@@ -61,11 +61,8 @@ namespace Feed;
 ///       If the connection drops for any reason, <see cref="ExecuteAsync"/> catches
 ///       the exception, marks <see cref="IsAuthenticated"/> as <see langword="false"/>,
 ///       waits for an exponentially increasing back-off delay (30 s, 60 s, 120 s …
-///       capped at 600 s), then reconnects. Because <c>_pendingSubscriptions</c>
-///       survives reconnects (it is a persistent <see cref="ConcurrentDictionary{TKey,TValue}"/>
-///       that is only mutated by <see cref="Subscribe"/> and
-///       <see cref="Unsubscribe"/>), all subscriptions that were active before the
-///       drop are automatically replayed once the new connection becomes authenticated.
+///       capped at 600 s), then reconnects. After 3 consecutive failures the snapshot
+///       cache is cleared to prevent new clients from receiving stale data.
 ///     </description>
 ///   </item>
 /// </list>
@@ -112,15 +109,6 @@ public class Connection(Snapshots snapshots, IOptions<Config> options, ILogger<C
     /// ready to receive and deliver market-data subscriptions.
     ///
     /// <para>
-    /// <b>How callers use this:</b> <c>Hub</c> reads this property when
-    /// composing status messages to browser clients so that the UI can indicate
-    /// whether the upstream data feed is live. The property is set to
-    /// <see langword="true"/> inside <see cref="OnMessage"/> when the authenticated
-    /// status is confirmed, and reset to <see langword="false"/> whenever the
-    /// connection is torn down (including during reconnect back-off periods).
-    /// </para>
-    ///
-    /// <para>
     /// Reads of this property are not synchronised with writes. Callers should treat
     /// the value as advisory — a momentary mismatch between the actual connection
     /// state and the property value is possible and harmless.
@@ -135,9 +123,50 @@ public class Connection(Snapshots snapshots, IOptions<Config> options, ILogger<C
     }
 
     /// <summary>
-    /// Records a request to receive market data for the specified contract and
-    /// adds or replaces the entry in <c>_pendingSubscriptions</c> so that the
-    /// subscription is replayed after every reconnect.
+    /// Current lifecycle phase of the upstream connection.
+    /// Values: <c>"disconnected"</c>, <c>"connecting"</c>, <c>"connected"</c>, <c>"authenticated"</c>.
+    /// </summary>
+    private volatile string _state = "disconnected";
+
+    /// <summary>Gets the current lifecycle phase string of the upstream connection.</summary>
+    public string State => _state;
+
+    /// <summary>
+    /// Count of consecutive reconnect attempts since the last successful session.
+    /// Reset to 0 on each successful <see cref="ConnectAndRunAsync"/> completion.
+    /// </summary>
+    private int _reconnectAttempts;
+
+    /// <summary>Gets the number of consecutive reconnect failures since the last successful connection.</summary>
+    public int ReconnectAttempts => Volatile.Read(ref _reconnectAttempts);
+
+    /// <summary>
+    /// Unbounded channel used to broadcast connection-lifecycle events
+    /// (<c>connected</c>, <c>authenticated</c>) to <see cref="Hub"/> so that all
+    /// browser clients can be notified in real time.
+    /// </summary>
+    private readonly Channel<(string Topic, bool Data)> _systemMessages =
+        Channel.CreateUnbounded<(string, bool)>(new UnboundedChannelOptions { SingleReader = true });
+
+    /// <summary>
+    /// Reader end of the system-events channel. <see cref="Hub"/> consumes this to
+    /// broadcast upstream state changes to all connected browser clients.
+    /// </summary>
+    public ChannelReader<(string Topic, bool Data)> SystemMessages => _systemMessages.Reader;
+
+    private void PublishSystem(string topic, bool data) =>
+        _systemMessages.Writer.TryWrite((topic, data));
+
+    /// <summary>
+    /// Records a request to receive market data for the specified contract.
+    ///
+    /// <para>
+    /// If this conid already has an active upstream subscription (field set may have
+    /// changed), an <c>umd+{conid}+{}</c> unsubscribe is sent first to clear the old
+    /// subscription before the new <c>smd</c> with the updated field list. The
+    /// semaphore serialises these two fire-and-forget sends in FIFO order so
+    /// <c>umd</c> always precedes <c>smd</c> on the wire.
+    /// </para>
     ///
     /// <para>
     /// If the upstream connection is currently authenticated, the subscribe message
@@ -145,23 +174,20 @@ public class Connection(Snapshots snapshots, IOptions<Config> options, ILogger<C
     /// <c>_pendingSubscriptions</c> and will be flushed by <see cref="FlushPendingAsync"/>
     /// once authentication is confirmed.
     /// </para>
-    ///
-    /// <para>
-    /// This method is called by <c>Hub</c> when a browser client requests
-    /// market data for a contract that has no existing upstream subscription (or when
-    /// a new field code must be added to an existing subscription).
-    /// </para>
     /// </summary>
     /// <param name="conid">The IBKR contract identifier (e.g. <c>265598</c> for AAPL).</param>
     /// <param name="fieldCodes">
-    /// The field codes to request from IBKR (e.g. <c>["31", "84", "86"]</c>). This
-    /// array should represent the full union of fields needed for this conid as
-    /// computed by <c>Subscriptions</c>, not just the incremental addition.
+    /// The full field union to request from IBKR for this conid.
     /// </param>
     public void Subscribe(int conid, string[] fieldCodes)
     {
-        _pendingSubscriptions[conid] = fieldCodes;
-        if (IsAuthenticated) _ = SendAsync(BuildSmdMessage(conid, fieldCodes));
+        var alreadySubscribed = false;
+        _pendingSubscriptions.AddOrUpdate(conid, fieldCodes, (_, _) => { alreadySubscribed = true; return fieldCodes; });
+        if (IsAuthenticated)
+        {
+            if (alreadySubscribed) _ = SendAsync($"umd+{conid}+{{}}");
+            _ = SendAsync(BuildSmdMessage(conid, fieldCodes));
+        }
     }
 
     /// <summary>
@@ -174,12 +200,6 @@ public class Connection(Snapshots snapshots, IOptions<Config> options, ILogger<C
     /// <c>_pendingSubscriptions</c>, so the subscription will not be replayed if
     /// the connection reconnects.
     /// </para>
-    ///
-    /// <para>
-    /// This method is called by <c>Hub</c> (via <c>Subscriptions</c>'s
-    /// delayed-unsubscribe callback) once all browser clients that were watching a
-    /// given contract have disconnected and the configured grace period has elapsed.
-    /// </para>
     /// </summary>
     /// <param name="conid">The IBKR contract identifier to stop streaming.</param>
     public void Unsubscribe(int conid)
@@ -189,9 +209,10 @@ public class Connection(Snapshots snapshots, IOptions<Config> options, ILogger<C
     }
 
     /// <summary>
-    /// Main background-service loop. Waits for the OAuth session, then repeatedly
-    /// calls <see cref="ConnectAndRunAsync"/> with exponential back-off between
-    /// attempts until the application stops.
+    /// Main background-service loop. Repeatedly calls <see cref="ConnectAndRunAsync"/>
+    /// with exponential back-off between attempts until the application stops.
+    /// After 3 consecutive failures the snapshot cache is cleared to prevent new
+    /// clients from seeing data that may be hours old.
     /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -202,12 +223,19 @@ public class Connection(Snapshots snapshots, IOptions<Config> options, ILogger<C
             {
                 await ConnectAndRunAsync(stoppingToken);
                 attempt = 0;
+                Volatile.Write(ref _reconnectAttempts, 0);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception ex) { logger.LogError(ex, "Connection error"); }
 
             if (stoppingToken.IsCancellationRequested) break;
             attempt++;
+            Volatile.Write(ref _reconnectAttempts, attempt);
+            if (attempt == 3)
+            {
+                logger.LogWarning("3 consecutive upstream failures — clearing stale snapshot cache");
+                snapshots.ClearAll();
+            }
             var delaySec = (int)Math.Min(30 * Math.Pow(2, attempt - 1), 600);
             if (logger.IsEnabled(LogLevel.Information)) logger.LogInformation("Reconnecting in {Delay}s (attempt {Attempt})", delaySec, attempt);
             try { await Task.Delay(TimeSpan.FromSeconds(delaySec), stoppingToken); }
@@ -218,31 +246,19 @@ public class Connection(Snapshots snapshots, IOptions<Config> options, ILogger<C
     /// <summary>
     /// Opens a fresh WebSocket connection to IBKR, sends the initial heartbeat,
     /// then runs the heartbeat and receive loops concurrently until one of them
-    /// terminates (due to a server close frame, network error, or cancellation).
-    ///
-    /// <para>
-    /// <b>Initial <c>tic</c> heartbeat:</b> IBKR closes connections that are idle
-    /// immediately after the TCP/TLS handshake. The <c>tic</c> frame is therefore
-    /// sent as soon as ConnectAsync of ClientWebSocket returns — before
-    /// the first configured periodic heartbeat would fire — to signal liveness to
-    /// the IBKR gateway.
-    /// </para>
-    ///
-    /// <para>
-    /// <b>Teardown:</b> when either loop exits, the linked
-    /// <see cref="CancellationTokenSource"/> is cancelled so that the other loop
-    /// is also stopped. <see cref="IsAuthenticated"/> is reset to
-    /// <see langword="false"/> and the socket is closed gracefully (if still open)
-    /// and disposed.
-    /// </para>
+    /// terminates. Publishes <c>connected</c> and <c>authenticated</c> system events
+    /// to <see cref="SystemMessages"/> as lifecycle phases change.
     /// </summary>
     private async Task ConnectAndRunAsync(CancellationToken ct)
     {
         _ws = new ClientWebSocket();
         try
         {
+            _state = "connecting";
             if (logger.IsEnabled(LogLevel.Information)) logger.LogInformation("Connecting to {Uri}", options.Value.BaseAddress);
             await _ws.ConnectAsync(options.Value.BaseAddress, ct);
+            _state = "connected";
+            PublishSystem("connected", true);
             if (logger.IsEnabled(LogLevel.Information)) logger.LogInformation("Connected — waiting for sts");
 
             SetAuthenticated(false);
@@ -259,6 +275,9 @@ public class Connection(Snapshots snapshots, IOptions<Config> options, ILogger<C
         }
         finally
         {
+            PublishSystem("authenticated", false);
+            PublishSystem("connected", false);
+            _state = "disconnected";
             SetAuthenticated(false);
             if (_ws.State == WebSocketState.Open)
             {
@@ -278,15 +297,7 @@ public class Connection(Snapshots snapshots, IOptions<Config> options, ILogger<C
 
     /// <summary>
     /// Sends a <c>tic</c> keepalive frame to IBKR at
-    /// <see cref="Config.PingInterval"/> cadence for as long
-    /// as the connection is active.
-    ///
-    /// <para>
-    /// Uses <see cref="PeriodicTimer"/> rather than <c>Task.Delay</c> in a loop so
-    /// that timer drift does not accumulate across ticks. The loop exits cleanly
-    /// when <paramref name="ct"/> is cancelled (i.e. when the connection is being
-    /// torn down).
-    /// </para>
+    /// <see cref="Config.PingInterval"/> cadence for as long as the connection is active.
     /// </summary>
     private async Task HeartbeatAsync(CancellationToken ct)
     {
@@ -301,18 +312,6 @@ public class Connection(Snapshots snapshots, IOptions<Config> options, ILogger<C
     /// Continuously reads WebSocket frames from the upstream IBKR connection,
     /// reassembles fragmented messages, and passes each complete UTF-8 text
     /// message to <see cref="OnMessage"/>.
-    ///
-    /// <para>
-    /// The receive buffer is 64 KiB. Fragmented messages (where
-    /// <see cref="WebSocketReceiveResult.EndOfMessage"/> is <see langword="false"/>)
-    /// are accumulated in a <see cref="MemoryStream"/> and only dispatched once the
-    /// final fragment arrives.
-    /// </para>
-    ///
-    /// <para>
-    /// A <see cref="WebSocketMessageType.Close"/> frame causes the loop to return
-    /// immediately, triggering the teardown path in <see cref="ConnectAndRunAsync"/>.
-    /// </para>
     /// </summary>
     private async Task ReceiveLoopAsync(CancellationToken ct)
     {
@@ -345,8 +344,7 @@ public class Connection(Snapshots snapshots, IOptions<Config> options, ILogger<C
     ///       Authentication status. When <c>args.authenticated</c> is
     ///       <see langword="true"/>, <see cref="IsAuthenticated"/> is set and
     ///       <see cref="FlushPendingAsync"/> is called to replay all queued upstream
-    ///       subscriptions. This handles the case where subscriptions were registered
-    ///       before the connection authenticated (e.g. immediately after a reconnect).
+    ///       subscriptions. A <c>authenticated</c> system event is published.
     ///     </description>
     ///   </item>
     ///   <item>
@@ -354,18 +352,10 @@ public class Connection(Snapshots snapshots, IOptions<Config> options, ILogger<C
     ///     <description>
     ///       Market-data tick for a contract. Every JSON key whose name is a pure
     ///       integer string (e.g. <c>"31"</c>, <c>"84"</c>) is treated as an IBKR
-    ///       field code. The raw string value is written to <see cref="Snapshots"/>
-    ///       so that downstream browser clients can read the latest value.
-    ///       Non-numeric keys such as <c>"_updated"</c>, <c>"conid"</c>, and
-    ///       <c>"topic"</c> are silently skipped.
+    ///       field code. The raw string value is written to <see cref="Snapshots"/>.
     ///     </description>
     ///   </item>
     /// </list>
-    /// </para>
-    ///
-    /// <para>
-    /// All exceptions are caught and logged as warnings so that a malformed message
-    /// cannot terminate the receive loop.
     /// </para>
     /// </summary>
     private void OnMessage(string text, CancellationToken ct)
@@ -385,6 +375,8 @@ public class Connection(Snapshots snapshots, IOptions<Config> options, ILogger<C
                 if (wasAuthenticated != authenticated)
                 {
                     if (logger.IsEnabled(LogLevel.Information)) logger.LogInformation("sts authenticated={Auth}", authenticated);
+                    PublishSystem("authenticated", authenticated);
+                    _state = authenticated ? "authenticated" : "connected";
                 }
 
                 if (!wasAuthenticated && authenticated)
@@ -413,10 +405,7 @@ public class Connection(Snapshots snapshots, IOptions<Config> options, ILogger<C
     ///
     /// <para>
     /// This is called once per connection, immediately after IBKR confirms
-    /// authentication via a <c>sts</c> message. Because <c>_pendingSubscriptions</c>
-    /// is a persistent dictionary that is not cleared on disconnect, this single call
-    /// is sufficient to restore the full set of active market-data feeds after any
-    /// reconnect — no coordination with <c>Hub</c> is required.
+    /// authentication via a <c>sts</c> message.
     /// </para>
     /// </summary>
     private async Task FlushPendingAsync(CancellationToken ct)
@@ -431,28 +420,6 @@ public class Connection(Snapshots snapshots, IOptions<Config> options, ILogger<C
     /// Serialises and sends a UTF-8 text frame over the active WebSocket connection,
     /// acquiring <c>_sendLock</c> first to guarantee that at most one send is
     /// in-flight at a time.
-    ///
-    /// <para>
-    /// <b>Why the semaphore is required:</b> SendAsync of ClientWebSocket
-    /// throws <see cref="InvalidOperationException"/> if a concurrent send is already
-    /// in progress. Three independent asynchronous paths call this method:
-    /// <list type="bullet">
-    ///   <item><description>The initial <c>tic</c> sent right after connect.</description></item>
-    ///   <item><description>The periodic heartbeat timer (every 60 s).</description></item>
-    ///   <item><description>
-    ///     Fire-and-forget calls from <see cref="Subscribe"/>, <see cref="Unsubscribe"/>,
-    ///     and <see cref="FlushPendingAsync"/>.
-    ///   </description></item>
-    /// </list>
-    /// The semaphore serialises all of these without blocking threads — each caller
-    /// suspends asynchronously until the slot is available.
-    /// </para>
-    ///
-    /// <para>
-    /// Send failures (e.g. if the socket has already closed by the time the lock is
-    /// acquired) are caught and logged rather than re-thrown so that the caller's
-    /// fire-and-forget invocation does not produce an unobserved exception.
-    /// </para>
     /// </summary>
     /// <param name="message">The text payload to send.</param>
     /// <param name="ct">Cancellation token; passed to both the semaphore wait and the send.</param>
@@ -479,11 +446,9 @@ public class Connection(Snapshots snapshots, IOptions<Config> options, ILogger<C
     ///
     /// <para>
     /// The resulting string has the form
-    /// <c>smd+{conid}+{"fields":["31","84","86"]}</c>, which is what IBKR expects
-    /// to start streaming market data for a contract.
+    /// <c>smd+{conid}+{"fields":["31","84","86"]}</c>.
     /// </para>
     /// </summary>
-    /// <see href="https://www.interactivebrokers.com/campus/ibkr-api-page/cpapi-v1/#ws-sub-watchlist-data">Market Data Request</see>
     /// <param name="conid">The IBKR contract identifier.</param>
     /// <param name="fieldCodes">The array of numeric field code strings to subscribe to.</param>
     /// <returns>The complete subscription message ready for transmission.</returns>

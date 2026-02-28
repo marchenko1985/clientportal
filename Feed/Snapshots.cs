@@ -98,6 +98,23 @@ public class Snapshots
 
     public ChannelReader<MarketTick> ReadChanges() => _changes.Reader;
 
+    /// <summary>Number of cached (conid, field) entries currently held.</summary>
+    public int Count => _store.Count;
+
+    /// <summary>
+    /// Removes all cached values. Called by <see cref="Connection"/> after several
+    /// consecutive reconnect failures to prevent new clients from receiving stale data
+    /// that may be hours old.
+    /// </summary>
+    public void ClearAll() => _store.Clear();
+
+    /// <summary>
+    /// Removes all cached entries for the specified contract.
+    /// Called when a conid's last subscriber leaves and the grace period expires, so that
+    /// the next subscriber always receives fresh data from IBKR rather than values that
+    /// may be arbitrarily old.
+    /// </summary>
+    /// <param name="conid">The IBKR contract identifier whose cached entries should be purged.</param>
     public void RemoveConid(int conid)
     {
         foreach (var key in _store.Keys)

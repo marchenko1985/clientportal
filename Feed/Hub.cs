@@ -1,12 +1,42 @@
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Channels;
 using Microsoft.Extensions.Options;
 
 namespace Feed;
 
+/// <summary>
+/// Background service that accepts browser WebSocket connections and fans out
+/// market-data updates to interested clients.
+///
+/// <para>
+/// <b>Protocol — client → server:</b>
+/// <list type="bullet">
+///   <item><description><c>smd+{conid}+{"fields":[...]}</c> — subscribe to market data for a contract.</description></item>
+///   <item><description><c>umd+{conid}+{}</c> — unsubscribe from a contract.</description></item>
+/// </list>
+/// </para>
+///
+/// <para>
+/// <b>Protocol — server → client:</b> all outbound messages use a typed
+/// <c>{"topic":"…","data":…}</c> envelope.
+/// <list type="bullet">
+///   <item><description><c>{"topic":"connected","data":true/false}</c> — upstream connection state change.</description></item>
+///   <item><description><c>{"topic":"authenticated","data":true/false}</c> — upstream authentication state change.</description></item>
+///   <item><description><c>{"topic":"batch","data":[{conid, field:val, …}]}</c> — market-data tick batch for subscribed conids.</description></item>
+/// </list>
+/// </para>
+///
+/// <para>
+/// System events (<c>connected</c>, <c>authenticated</c>) are read from
+/// <see cref="Connection.SystemMessages"/> and broadcast to all connected clients.
+/// New clients are immediately greeted with the current upstream state so they are
+/// never left in the dark.
+/// </para>
+/// </summary>
 public class Hub(Connection connection, Subscriptions subscriptions, Snapshots snapshots, IOptions<Config> options, ILogger<Hub> logger) : BackgroundService
 {
     private readonly TimeSpan _batchInterval = options.Value.BatchInterval;
@@ -19,10 +49,17 @@ public class Hub(Connection connection, Subscriptions subscriptions, Snapshots s
 
     private long _activeClientSubscriptions;
 
+    /// <summary>Number of browser clients currently connected over WebSocket.</summary>
+    public int ConnectedClients => _clients.Count;
+
+    /// <summary>Total number of active (conid, client) subscription pairs.</summary>
+    public int ActiveSubscriptions => (int)Interlocked.Read(ref _activeClientSubscriptions);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var workerCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         var collectTask = CollectChangesAsync(workerCts.Token);
+        var systemTask = CollectSystemMessagesAsync(workerCts.Token);
 
         using var timer = new PeriodicTimer(_batchInterval);
         try
@@ -39,6 +76,7 @@ public class Hub(Connection connection, Subscriptions subscriptions, Snapshots s
         {
             await workerCts.CancelAsync();
             try { await collectTask; } catch (OperationCanceledException) { }
+            try { await systemTask; } catch (OperationCanceledException) { }
         }
     }
 
@@ -47,6 +85,10 @@ public class Hub(Connection connection, Subscriptions subscriptions, Snapshots s
         var client = new ConnectedClient(ws);
         _clients.TryAdd(client, 0);
         if (logger.IsEnabled(LogLevel.Information)) logger.LogInformation("Client connected (total: {Count})", _clients.Count);
+
+        // Greet new client with current upstream state.
+        client.Enqueue(Envelope("connected", connection.State != "disconnected"));
+        client.Enqueue(Envelope("authenticated", connection.IsAuthenticated));
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         try
@@ -85,6 +127,20 @@ public class Hub(Connection connection, Subscriptions subscriptions, Snapshots s
 
                 fields.Add(tick.Field);
             }
+        }
+    }
+
+    /// <summary>
+    /// Reads system events from <see cref="Connection.SystemMessages"/> and broadcasts
+    /// each as a typed envelope to all currently connected browser clients.
+    /// </summary>
+    private async Task CollectSystemMessagesAsync(CancellationToken ct)
+    {
+        await foreach (var (topic, data) in connection.SystemMessages.ReadAllAsync(ct))
+        {
+            var msg = Envelope(topic, data);
+            foreach (var (client, _) in _clients)
+                client.Enqueue(msg);
         }
     }
 
@@ -135,7 +191,7 @@ public class Hub(Connection connection, Subscriptions subscriptions, Snapshots s
         foreach (var (client, batch) in batches)
         {
             totalObjects += batch.Count;
-            client.Enqueue(batch.ToJsonString());
+            client.Enqueue(Envelope("batch", batch));
         }
 
         if (logger.IsEnabled(LogLevel.Debug))
@@ -187,7 +243,7 @@ public class Hub(Connection connection, Subscriptions subscriptions, Snapshots s
                     RemoveClientSubscription(client, conid, unsubscribeUpstream: true);
                 }
 
-                var upstreamFields = subscriptions.Subscribe(conid, fields);
+                var upstreamFields = subscriptions.Subscribe(conid, client.Id, fields);
                 if (upstreamFields != null) connection.Subscribe(conid, upstreamFields);
 
                 var snap = snapshots.GetSnapshot(conid, fields);
@@ -195,7 +251,7 @@ public class Hub(Connection connection, Subscriptions subscriptions, Snapshots s
                 {
                     var obj = new JsonObject { ["conid"] = conid };
                     foreach (var (f, v) in snap) obj[f] = JsonValue.Create(v);
-                    client.Enqueue(new JsonArray(obj).ToJsonString());
+                    client.Enqueue(Envelope("batch", new JsonArray(obj)));
                 }
 
                 AddClientSubscription(client, conid, fields);
@@ -241,12 +297,17 @@ public class Hub(Connection connection, Subscriptions subscriptions, Snapshots s
 
         if (unsubscribeUpstream)
         {
-            subscriptions.Unsubscribe(conid);
+            subscriptions.Unsubscribe(conid, client.Id);
         }
     }
 
+    /// <summary>Serialises a typed <c>{topic, data}</c> envelope to JSON.</summary>
+    private static string Envelope(string topic, object data) =>
+        JsonSerializer.Serialize(new { topic, data });
+
     private sealed class ConnectedClient(WebSocket ws)
     {
+        public readonly Guid Id = Guid.NewGuid();
         public readonly WebSocket Ws = ws;
         public readonly ConcurrentDictionary<int, string[]> Conids = new();
 
