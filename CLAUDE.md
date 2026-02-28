@@ -52,7 +52,7 @@ The detection uses `Headers.Upgrade == "websocket"` rather than `HttpContext.Web
 
 `Config` is bound from the `Config` JSON section. The three `byte[]` fields (`AccessTokenSecret`, `DhPrimeBytes`, `PrivateSignatureBytes`) are stored as base64 in `appsettings.json` — the .NET binder decodes them automatically. A `PostConfigure` in `Program.cs` converts them to their runtime forms (`BigInteger` and `RSA`); properties needed only at runtime (`DhPrime`, `PrivateSignature`) have `internal set` and are not config-bound.
 
-See `Config.md` for the one-time extraction commands used to produce the base64 values from the PEM files that IBKR provides.
+See `Web/Config.cs` (the `DhPrimeBytes`, `AccessTokenSecret`, `PrivateSignatureBytes` XML comments) for the one-time extraction commands used to produce the base64 values from the PEM files that IBKR provides.
 
 ### HTTP client logging — named options gotcha
 
@@ -94,7 +94,6 @@ UseForwardedHeaders → UseCors → WebSocket origin check (inline middleware) �
 
 ## Reference docs
 
-- `Config.md` — all `appsettings.json` keys, base64 extraction commands, appsettings layering strategy
-- `Signer.md` — IBKR two-layer OAuth protocol, the DH exchange, before/after comparison
-- `Session.md` — session state machine, public properties, keep-alive details
-- `Nginx.md` — nginx site config, systemd unit, forwarded headers rationale
+- `Web/README.md` — Web project overview, proxied routes, running instructions
+- `Test.md` — curl and WebSocket smoke test commands
+- Implementation details (session lifecycle, OAuth signing, config fields) live as XML doc comments in `Web/Session.cs`, `Web/Signer.cs`, `Web/Config.cs`
