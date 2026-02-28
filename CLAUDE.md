@@ -7,9 +7,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 dotnet build             # build
 dotnet run --project Gateway # run — launchSettings.json sets http://localhost:5001 and ASPNETCORE_ENVIRONMENT=Development
+dotnet run --project Feed # run — launchSettings.json sets http://localhost:5002 and ASPNETCORE_ENVIRONMENT=Development
 ```
 
-`TreatWarningsAsErrors=True` is set in the project — warnings fail the build.
+`TreatWarningsAsErrors=True` is set in projects — warnings fail the build.
+
+## Agreements
+
+We have decided to store docs as xml doc strings close to source code, if code edited make sure to update its docs as well to keep them up to date.
 
 ### Manual testing
 
