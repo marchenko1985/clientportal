@@ -67,6 +67,14 @@ See `Config.md` for the one-time extraction commands used to produce the base64 
 })
 ```
 
+**Double slash in logged request paths** — log lines from `AddExtendedHttpClientLogging` look like:
+
+```
+POST api.ibkr.com//v1/api/oauth/live_session_token
+```
+
+This is a formatting artefact in the library: it assembles the log message as `{Host}/{Path}` where `{Path}` already carries a leading `/`, producing a double slash. The underlying `HttpRequestMessage.RequestUri` is correct (`https://api.ibkr.com/v1/api/oauth/live_session_token`) and the wire request is fine. There is no bug to fix — the library's internal formatter cannot be overridden.
+
 `AddRedaction()` alone does not guarantee plain-text header logging — explicitly register `NullRedactor` for the relevant classification:
 
 ```csharp
