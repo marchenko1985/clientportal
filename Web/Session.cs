@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using System.Net.Http.Headers;
 using System.Numerics;
 using System.Text.Json.Nodes;
@@ -216,8 +215,7 @@ public class Session(IHttpClientFactory httpClientFactory, Signer signer, IOptio
     private HttpRequestMessage CreateSignedRequest(HttpMethod method, string path, HttpContent? content)
     {
         var uri = new Uri(_httpClient.BaseAddress!, path);
-        var req = new HttpRequestMessage(method, uri);
-        req.Content = content;
+        var req = new HttpRequestMessage(method, uri) { Content = content };
         req.Headers.Authorization = AuthenticationHeaderValue.Parse(signer.BuildApiAuthorizationHeader(method, uri, LiveSessionToken!));
         return req;
     }
@@ -250,16 +248,12 @@ public record TickleResponse
     public Server Server { get; init; } = new();
 }
 
-[SuppressMessage("ReSharper", "UnusedMember.Global")]
-[SuppressMessage("ReSharper", "AutoPropertyCanBeMadeGetOnly.Global")]
 public record Server
 {
     [JsonPropertyName("authStatus")]
     public AuthenticationStatus AuthenticationStatus { get; init; } = new();
 }
 
-[SuppressMessage("ReSharper", "UnusedMember.Global")]
-[SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
 public record AuthenticationStatus
 {
     /// <summary>

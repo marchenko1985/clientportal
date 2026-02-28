@@ -63,7 +63,7 @@ public class Config
     /// The ciphertext is the original AccessTokenSecret value from IBKR's oauth/live_session_token response.
     /// To reproduce (pipe the raw ciphertext bytes into openssl, then base64-encode the plaintext output):
     /// <code>
-    /// echo "<ciphertext from IBKR>" \
+    /// echo "Lj...Tw==" \
     ///   | base64 -d \
     ///   | openssl pkeyutl -decrypt -pkeyopt rsa_padding_mode:pkcs1 -inkey private_encryption.pem \
     ///   | base64
