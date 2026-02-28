@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 dotnet build             # build
-dotnet run --project Gateway # run — launchSettings.json sets http://localhost:5000 and ASPNETCORE_ENVIRONMENT=Development
+dotnet run --project Gateway # run — launchSettings.json sets http://localhost:5001 and ASPNETCORE_ENVIRONMENT=Development
 ```
 
 `TreatWarningsAsErrors=True` is set in the project — warnings fail the build.
@@ -81,6 +81,16 @@ This is a formatting artefact in the library: it assembles the log message as `{
 services.AddRedaction(rb => rb.SetRedactor<NullRedactor>(
     DataClassificationSet.FromDataClassification(DataClassification.Unknown)));
 ```
+
+### Production environmnet gotcha
+
+Attempts to run:
+
+```bash
+ASPNETCORE_ENVIRONMENT=Production dotnet run --project Gateway
+```
+
+will not run in app in production environment, launchSettings.json takes preference and overrides it back to production, if needed for temporary testing - just edit launchSettings.json instead
 
 ### Middleware order
 
