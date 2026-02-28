@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Security.Cryptography;
 
@@ -34,7 +33,6 @@ namespace Web;
 /// variables using the double-underscore separator (e.g. <c>Config__ConsumerKey</c>).
 /// </para>
 /// </remarks>
-[SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
 public class Config
 {
     // Config-bound — .NET auto-decodes base64 strings to byte[]
@@ -92,7 +90,7 @@ public class Config
     /// <code>
     /// grep -v "^-----" private_signature.pem | tr -d '\n'
     /// </code>
-    /// Imported at runtime via <see cref="System.Security.Cryptography.RSA.ImportPkcs8PrivateKey"/>.
+    /// Imported at runtime via <see cref="RSA.ImportPkcs8PrivateKey"/>.
     /// </remarks>
     public required byte[] PrivateSignatureBytes { get; init; }
 

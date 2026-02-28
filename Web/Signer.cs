@@ -140,7 +140,7 @@ public class Signer
     /// <returns>Base64-encoded live session token.</returns>
     /// <remarks>
     /// <para>
-    /// Computation: <c>token = Base64(HMAC-SHA1(sharedSecretBytes, accessTokenSecretBytes))</c>
+    /// Computation: <c>token = Base64(HMAC-SHA1(key=sharedSecretBytes, message=accessTokenSecretBytes))</c>
     /// where <c>sharedSecretBytes</c> is the shared secret <c>A^b mod p</c> serialised
     /// as signed big-endian bytes.
     /// </para>
