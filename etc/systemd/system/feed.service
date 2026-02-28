@@ -5,12 +5,12 @@ After=network.target
 [Service]
 User=www-data
 Type=simple
-WorkingDirectory=/opt/gateway
-ExecStart=/opt/gateway/gateway
+WorkingDirectory=/opt/feed
+ExecStart=/opt/feed/feed
 Restart=on-failure
 RestartSec=5
 Environment=ASPNETCORE_ENVIRONMENT=Production
-Environment=ASPNETCORE_URLS=http://127.0.0.1:5001
+Environment=ASPNETCORE_URLS=http://127.0.0.1:5002
 Environment=DOTNET_GCServer=1
 StandardOutput=journal
 StandardError=journal

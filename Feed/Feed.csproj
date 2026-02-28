@@ -7,5 +7,6 @@
     <LangVersion>latest</LangVersion>
     <InvariantGlobalization>true</InvariantGlobalization>
     <CompressionEnabled>false</CompressionEnabled>
+    <AssemblyName>feed</AssemblyName>
   </PropertyGroup>
 </Project>
