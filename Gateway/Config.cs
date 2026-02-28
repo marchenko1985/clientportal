@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Security.Cryptography;
 
@@ -33,6 +34,7 @@ namespace Gateway;
 /// variables using the double-underscore separator (e.g. <c>Config__ConsumerKey</c>).
 /// </para>
 /// </remarks>
+[SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
 public class Config
 {
     // Config-bound — .NET auto-decodes base64 strings to byte[]

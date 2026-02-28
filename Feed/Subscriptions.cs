@@ -165,7 +165,7 @@ public class Subscriptions(Action<int> onDelayedUnsubscribe, IOptions<Config> op
             {
                 cts!.Cancel();
                 PendingUnsubscribes.Remove(conid);
-                if (logger.IsEnabled(LogLevel.Debug)) logger.LogDebug("[Subs] Cancelled delayed unsubscribe for conid {Conid}", conid);
+                if (logger.IsEnabled(LogLevel.Debug)) logger.LogDebug("Cancelled delayed unsubscribe for conid {Conid}", conid);
             }
 
             RefCounts.TryGetValue(conid, out var count);
@@ -174,35 +174,19 @@ public class Subscriptions(Action<int> onDelayedUnsubscribe, IOptions<Config> op
             if (!ConidFields.TryGetValue(conid, out var existing))
             {
                 ConidFields[conid] = [.. requestedFieldCodes];
-                if (logger.IsEnabled(LogLevel.Debug))
-                    logger.LogDebug(
-                        "[Subs] First subscriber for conid {Conid}; refs={RefCount}, fields={FieldCount}",
-                        conid,
-                        RefCounts[conid],
-                        requestedFieldCodes.Length);
+                if (logger.IsEnabled(LogLevel.Debug)) logger.LogDebug("First subscriber for conid {Conid}; refs={RefCount}, fields={FieldCount}", conid, RefCounts[conid], requestedFieldCodes.Length);
                 return [.. requestedFieldCodes];
             }
 
             var newCodes = requestedFieldCodes.Except(existing).ToArray();
             if (newCodes.Length == 0)
             {
-                if (logger.IsEnabled(LogLevel.Debug))
-                    logger.LogDebug(
-                        "[Subs] Subscribe no-op for conid {Conid}; refs={RefCount}, fields={FieldCount}",
-                        conid,
-                        RefCounts[conid],
-                        existing.Count);
+                if (logger.IsEnabled(LogLevel.Debug)) logger.LogDebug("Subscribe no-op for conid {Conid}; refs={RefCount}, fields={FieldCount}", conid, RefCounts[conid], existing.Count);
                 return null;
             }
 
             foreach (var code in newCodes) existing.Add(code);
-            if (logger.IsEnabled(LogLevel.Debug))
-                logger.LogDebug(
-                    "[Subs] Expanded fields for conid {Conid}; refs={RefCount}, added={AddedFields}, total={TotalFields}",
-                    conid,
-                    RefCounts[conid],
-                    newCodes.Length,
-                    existing.Count);
+            if (logger.IsEnabled(LogLevel.Debug)) logger.LogDebug("Expanded fields for conid {Conid}; refs={RefCount}, added={AddedFields}, total={TotalFields}", conid, RefCounts[conid], newCodes.Length, existing.Count);
             return [.. existing];
         }
     }
@@ -229,7 +213,7 @@ public class Subscriptions(Action<int> onDelayedUnsubscribe, IOptions<Config> op
     ///   <item>
     ///     <description>
     ///       A <see cref="Task.Delay(int, CancellationToken)"/> timer of
-    ///       <see cref="InteractiveBrokersOptions.UnsubscribeDelay"/> is started. Its
+    ///       <see cref="Config.UnsubscribeDelay"/> is started. Its
     ///       <see cref="CancellationTokenSource"/> is stored in
     ///       <see cref="PendingUnsubscribes"/> so that a subsequent <see cref="Subscribe"/>
     ///       call can cancel it within the grace period.
@@ -270,8 +254,7 @@ public class Subscriptions(Action<int> onDelayedUnsubscribe, IOptions<Config> op
                 PendingUnsubscribes[conid] = cts;
                 var nextVersion = UnsubscribeVersions.GetValueOrDefault(conid) + 1;
                 UnsubscribeVersions[conid] = nextVersion;
-                if (logger.IsEnabled(LogLevel.Debug))
-                    logger.LogDebug("[Subs] Last subscriber left for conid {Conid}; scheduling delayed unsubscribe in {Delay}", conid, _unsubscribeDelay);
+                if (logger.IsEnabled(LogLevel.Debug)) logger.LogDebug("Last subscriber left for conid {Conid}; scheduling delayed unsubscribe in {Delay}", conid, _unsubscribeDelay);
 
                 _ = Task.Delay(_unsubscribeDelay, cts.Token).ContinueWith(t =>
                 {
@@ -296,12 +279,12 @@ public class Subscriptions(Action<int> onDelayedUnsubscribe, IOptions<Config> op
 
                     if (shouldUnsubscribe)
                     {
-                        if (logger.IsEnabled(LogLevel.Debug)) logger.LogDebug("[Subs] Delayed unsubscribe fired for conid {Conid}", conid);
+                        if (logger.IsEnabled(LogLevel.Debug)) logger.LogDebug("Delayed unsubscribe fired for conid {Conid}", conid);
                         onDelayedUnsubscribe(conid);
                     }
                     else
                     {
-                        if (logger.IsEnabled(LogLevel.Debug)) logger.LogDebug("[Subs] Ignored stale delayed unsubscribe for conid {Conid}", conid);
+                        if (logger.IsEnabled(LogLevel.Debug)) logger.LogDebug("Ignored stale delayed unsubscribe for conid {Conid}", conid);
                     }
 
                     cts.Dispose();
@@ -310,7 +293,7 @@ public class Subscriptions(Action<int> onDelayedUnsubscribe, IOptions<Config> op
             else
             {
                 RefCounts[conid] = count - 1;
-                if (logger.IsEnabled(LogLevel.Debug)) logger.LogDebug("[Subs] Decremented refs for conid {Conid}; refs={RefCount}", conid, RefCounts[conid]);
+                if (logger.IsEnabled(LogLevel.Debug)) logger.LogDebug("Decremented refs for conid {Conid}; refs={RefCount}", conid, RefCounts[conid]);
             }
         }
     }

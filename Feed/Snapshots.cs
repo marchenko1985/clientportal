@@ -41,12 +41,7 @@ public class Snapshots
     /// concurrently without explicit locking.
     /// </summary>
     private readonly ConcurrentDictionary<(int Conid, string Field), (string Value, long Ticks)> _store = new();
-    private readonly Channel<MarketTick> _changes = Channel.CreateUnbounded<MarketTick>(
-        new UnboundedChannelOptions
-        {
-            SingleReader = true,
-            SingleWriter = false
-        });
+    private readonly Channel<MarketTick> _changes = Channel.CreateUnbounded<MarketTick>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
 
     /// <summary>
     /// Writes a new raw value for the specified contract and field.
@@ -60,9 +55,8 @@ public class Snapshots
     /// </para>
     ///
     /// <para>
-    /// The method is lock-free: it delegates to
-    /// <see cref="ConcurrentDictionary{TKey,TValue}.AddOrUpdate"/> which provides
-    /// atomic compare-and-update semantics.
+    /// The method is lock-free: it delegates to the AddOrUpdate method of ConcurrentDictionary
+    /// which provides atomic compare-and-update semantics.
     /// </para>
     /// </summary>
     /// <param name="conid">

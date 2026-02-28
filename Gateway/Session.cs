@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net.Http.Headers;
 using System.Numerics;
 using System.Text.Json.Nodes;
@@ -248,12 +249,14 @@ public record TickleResponse
     public Server Server { get; init; } = new();
 }
 
+[SuppressMessage("ReSharper", "AutoPropertyCanBeMadeGetOnly.Global")]
 public record Server
 {
     [JsonPropertyName("authStatus")]
     public AuthenticationStatus AuthenticationStatus { get; init; } = new();
 }
 
+[SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
 public record AuthenticationStatus
 {
     /// <summary>

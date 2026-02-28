@@ -1,5 +1,8 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Feed;
 
+[SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
 public record Config
 {
     public required Uri BaseAddress { get; init; }

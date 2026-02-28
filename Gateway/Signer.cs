@@ -148,7 +148,7 @@ public class Signer
     /// The signed serialisation — prepend <c>0x00</c> if the high bit of the leading
     /// byte is set — matches Java's <c>BigInteger.toByteArray()</c> semantics.
     /// IBKR's server-side implementation uses Java, so this byte layout is required
-    /// for the HMAC inputs to agree. <see cref="BigInteger.ToByteArray"/> with
+    /// for the HMAC inputs to agree. <see cref="BigInteger.ToByteArray()"/> with
     /// <c>isUnsigned: false, isBigEndian: true</c> produces exactly this layout.
     /// </para>
     /// </remarks>

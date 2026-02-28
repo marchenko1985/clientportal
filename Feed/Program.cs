@@ -39,4 +39,6 @@ app.Map("/ws", async (HttpContext ctx, Hub hub, IHostApplicationLifetime lifetim
     await hub.AddClientAsync(ws, ctx.RequestAborted, lifetime.ApplicationStopping);
 });
 
+app.Map("/subscriptions", (Subscriptions subscriptions) => subscriptions.State);
+
 app.Run();

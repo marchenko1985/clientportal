@@ -7,13 +7,9 @@ using Microsoft.Extensions.Options;
 
 namespace Feed;
 
-public class Hub : BackgroundService
+public class Hub(Connection connection, Subscriptions subscriptions, Snapshots snapshots, IOptions<Config> options, ILogger<Hub> logger) : BackgroundService
 {
-    private readonly Connection _connection;
-    private readonly Subscriptions _subscriptions;
-    private readonly Snapshots _snapshots;
-    private readonly ILogger<Hub> _logger;
-    private readonly TimeSpan _batchInterval;
+    private readonly TimeSpan _batchInterval = options.Value.BatchInterval;
 
     private readonly ConcurrentDictionary<ConnectedClient, byte> _clients = new();
     private readonly ConcurrentDictionary<int, ConcurrentDictionary<ConnectedClient, byte>> _clientsByConid = new();
@@ -22,20 +18,6 @@ public class Hub : BackgroundService
     private Dictionary<int, HashSet<string>> _pendingChanges = [];
 
     private long _activeClientSubscriptions;
-
-    public Hub(
-        Connection connection,
-        Subscriptions subscriptions,
-        Snapshots snapshots,
-        IOptions<Config> options,
-        ILogger<Hub> logger)
-    {
-        _connection = connection;
-        _subscriptions = subscriptions;
-        _snapshots = snapshots;
-        _logger = logger;
-        _batchInterval = options.Value.BatchInterval;
-    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -64,7 +46,7 @@ public class Hub : BackgroundService
     {
         var client = new ConnectedClient(ws);
         _clients.TryAdd(client, 0);
-        _logger.LogInformation("[Hub] Client connected (total: {Count})", _clients.Count);
+        if (logger.IsEnabled(LogLevel.Information)) logger.LogInformation("Client connected (total: {Count})", _clients.Count);
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         try
@@ -84,13 +66,13 @@ public class Hub : BackgroundService
                 RemoveClientSubscription(client, conid, unsubscribeUpstream: !stoppingToken.IsCancellationRequested);
             }
 
-            _logger.LogInformation("[Hub] Client disconnected (total: {Count})", _clients.Count);
+            if (logger.IsEnabled(LogLevel.Information)) logger.LogInformation("Client disconnected (total: {Count})", _clients.Count);
         }
     }
 
     private async Task CollectChangesAsync(CancellationToken ct)
     {
-        var reader = _snapshots.ReadChanges();
+        var reader = snapshots.ReadChanges();
         await foreach (var tick in reader.ReadAllAsync(ct))
         {
             lock (_pendingChangesLock)
@@ -129,12 +111,12 @@ public class Hub : BackgroundService
                 var relevantFields = clientFields.Where(changedFields.Contains).ToArray();
                 if (relevantFields.Length == 0) continue;
 
-                var snapshot = _snapshots.GetSnapshot(conid, relevantFields);
+                var snapshot = snapshots.GetSnapshot(conid, relevantFields);
                 if (snapshot.Count == 0) continue;
 
                 if (!batches.TryGetValue(client, out var batch))
                 {
-                    batch = new JsonArray();
+                    batch = [];
                     batches[client] = batch;
                 }
 
@@ -156,8 +138,8 @@ public class Hub : BackgroundService
             client.Enqueue(batch.ToJsonString());
         }
 
-        if (_logger.IsEnabled(LogLevel.Debug))
-            _logger.LogDebug("[Hub] Flushed {ClientBatches} client batches ({Objects} objects)", batches.Count, totalObjects);
+        if (logger.IsEnabled(LogLevel.Debug))
+            logger.LogDebug("Flushed {ClientBatches} client batches ({Objects} objects)", batches.Count, totalObjects);
     }
 
     private async Task ReceiveLoopAsync(ConnectedClient client, CancellationToken ct)
@@ -205,10 +187,10 @@ public class Hub : BackgroundService
                     RemoveClientSubscription(client, conid, unsubscribeUpstream: true);
                 }
 
-                var upstreamFields = _subscriptions.Subscribe(conid, fields);
-                if (upstreamFields != null) _connection.Subscribe(conid, upstreamFields);
+                var upstreamFields = subscriptions.Subscribe(conid, fields);
+                if (upstreamFields != null) connection.Subscribe(conid, upstreamFields);
 
-                var snap = _snapshots.GetSnapshot(conid, fields);
+                var snap = snapshots.GetSnapshot(conid, fields);
                 if (snap.Count > 0)
                 {
                     var obj = new JsonObject { ["conid"] = conid };
@@ -217,7 +199,7 @@ public class Hub : BackgroundService
                 }
 
                 AddClientSubscription(client, conid, fields);
-                _logger.LogInformation("[Hub] Subscribed conid {Conid}", conid);
+                if (logger.IsEnabled(LogLevel.Information)) logger.LogInformation("Subscribed conid {Conid}", conid);
             }
             else if (text.StartsWith("umd+"))
             {
@@ -225,10 +207,13 @@ public class Hub : BackgroundService
                 if (secondPlus < 0 || !int.TryParse(text.AsSpan(4, secondPlus - 4), out var conid)) return;
 
                 RemoveClientSubscription(client, conid, unsubscribeUpstream: true);
-                _logger.LogInformation("[Hub] Unsubscribed conid {Conid}", conid);
+                if (logger.IsEnabled(LogLevel.Information)) logger.LogInformation("Unsubscribed conid {Conid}", conid);
             }
         }
-        catch (Exception ex) { _logger.LogWarning(ex, "[Hub] Failed to handle: {Text}", text); }
+        catch (Exception ex)
+        {
+            if (logger.IsEnabled(LogLevel.Warning)) logger.LogWarning(ex, "Failed to handle: {Text}", text);
+        }
     }
 
     private void AddClientSubscription(ConnectedClient client, int conid, string[] fields)
@@ -256,7 +241,7 @@ public class Hub : BackgroundService
 
         if (unsubscribeUpstream)
         {
-            _subscriptions.Unsubscribe(conid);
+            subscriptions.Unsubscribe(conid);
         }
     }
 

@@ -26,14 +26,6 @@ namespace Feed;
 /// <list type="number">
 ///   <item>
 ///     <description>
-///       The service waits for <see cref="SessionService.WaitForSessionAsync"/> to
-///       complete, guaranteeing that the OAuth handshake has finished and a valid
-///       session cookie + access token are available before any WebSocket connection
-///       attempt is made.
-///     </description>
-///   </item>
-///   <item>
-///     <description>
 ///       <see cref="ConnectAndRunAsync"/> opens the WebSocket to
 ///       <c>wss://api.ibkr.com/v1/api/ws?oauth_token={AccessToken}</c> with a
 ///       <c>Cookie: api={session}</c> header, then immediately sends a <c>tic</c>
@@ -45,7 +37,7 @@ namespace Feed;
 ///   <item>
 ///     <description>
 ///       <see cref="HeartbeatAsync"/> sends a <c>tic</c> frame at
-///       <see cref="InteractiveBrokersOptions.PingInterval"/> cadence to keep
+///       <see cref="Config.PingInterval"/> cadence to keep
 ///       the connection alive.
 ///     </description>
 ///   </item>
@@ -70,7 +62,7 @@ namespace Feed;
 ///       the exception, marks <see cref="IsAuthenticated"/> as <see langword="false"/>,
 ///       waits for an exponentially increasing back-off delay (30 s, 60 s, 120 s …
 ///       capped at 600 s), then reconnects. Because <c>_pendingSubscriptions</c>
-///       survives reconnects (it is a persistent <see cref="ConcurrentDictionary"/>
+///       survives reconnects (it is a persistent <see cref="ConcurrentDictionary{TKey,TValue}"/>
 ///       that is only mutated by <see cref="Subscribe"/> and
 ///       <see cref="Unsubscribe"/>), all subscriptions that were active before the
 ///       drop are automatically replayed once the new connection becomes authenticated.
@@ -79,11 +71,7 @@ namespace Feed;
 /// </list>
 /// </para>
 /// </summary>
-public class Connection(
-    Snapshots snapshots,
-    IOptions<Config> options,
-    IConfiguration configuration,
-    ILogger<Connection> logger) : BackgroundService
+public class Connection(Snapshots snapshots, IOptions<Config> options, ILogger<Connection> logger) : BackgroundService
 {
     /// <summary>
     /// The persistent map of conid → field-code array for every upstream market-data
@@ -104,7 +92,7 @@ public class Connection(
     ///
     /// <para>
     /// The WebSocket protocol requires that no two send operations overlap on the
-    /// same connection. <see cref="ClientWebSocket.SendAsync"/> is not thread-safe
+    /// same connection. SendAsync of  ClientWebSocket is not thread-safe
     /// when called concurrently. Three independent asynchronous paths may try to send
     /// at the same time: the heartbeat loop, the initial post-connect
     /// <c>tic</c>, and calls from <see cref="Subscribe"/> / <see cref="Unsubscribe"/>
@@ -216,12 +204,12 @@ public class Connection(
                 attempt = 0;
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception ex) { logger.LogError(ex, "[Socket] Connection error"); }
+            catch (Exception ex) { logger.LogError(ex, "Connection error"); }
 
             if (stoppingToken.IsCancellationRequested) break;
             attempt++;
             var delaySec = (int)Math.Min(30 * Math.Pow(2, attempt - 1), 600);
-            logger.LogInformation("[Socket] Reconnecting in {Delay}s (attempt {Attempt})", delaySec, attempt);
+            if (logger.IsEnabled(LogLevel.Information)) logger.LogInformation("Reconnecting in {Delay}s (attempt {Attempt})", delaySec, attempt);
             try { await Task.Delay(TimeSpan.FromSeconds(delaySec), stoppingToken); }
             catch (OperationCanceledException) { break; }
         }
@@ -235,7 +223,7 @@ public class Connection(
     /// <para>
     /// <b>Initial <c>tic</c> heartbeat:</b> IBKR closes connections that are idle
     /// immediately after the TCP/TLS handshake. The <c>tic</c> frame is therefore
-    /// sent as soon as <see cref="ClientWebSocket.ConnectAsync"/> returns — before
+    /// sent as soon as ConnectAsync of ClientWebSocket returns — before
     /// the first configured periodic heartbeat would fire — to signal liveness to
     /// the IBKR gateway.
     /// </para>
@@ -250,20 +238,14 @@ public class Connection(
     /// </summary>
     private async Task ConnectAndRunAsync(CancellationToken ct)
     {
-        var baseAddress = configuration["Config:BaseAddress"]
-            ?? throw new InvalidOperationException("Missing IBKR base address");
-
-        var baseUri = new Uri(baseAddress);
-
         _ws = new ClientWebSocket();
         try
         {
-            logger.LogInformation("[Socket] Connecting to {Uri}", baseUri);
-            await _ws.ConnectAsync(baseUri, ct);
-            logger.LogInformation("[Socket] Connected — waiting for sts");
+            if (logger.IsEnabled(LogLevel.Information)) logger.LogInformation("Connecting to {Uri}", options.Value.BaseAddress);
+            await _ws.ConnectAsync(options.Value.BaseAddress, ct);
+            if (logger.IsEnabled(LogLevel.Information)) logger.LogInformation("Connected — waiting for sts");
 
             SetAuthenticated(false);
-            await SendAsync("tic", ct); // send immediately; IBKR closes idle connections
 
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             try
@@ -279,7 +261,16 @@ public class Connection(
         {
             SetAuthenticated(false);
             if (_ws.State == WebSocketState.Open)
-                try { await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "closing", CancellationToken.None); } catch { }
+            {
+                try
+                {
+                    await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "closing", CancellationToken.None);
+                }
+                catch
+                {
+                    // noop
+                }
+            }
             _ws.Dispose();
             _ws = null;
         }
@@ -287,7 +278,7 @@ public class Connection(
 
     /// <summary>
     /// Sends a <c>tic</c> keepalive frame to IBKR at
-    /// <see cref="InteractiveBrokersOptions.PingInterval"/> cadence for as long
+    /// <see cref="Config.PingInterval"/> cadence for as long
     /// as the connection is active.
     ///
     /// <para>
@@ -301,7 +292,9 @@ public class Connection(
     {
         using var timer = new PeriodicTimer(options.Value.PingInterval);
         while (await timer.WaitForNextTickAsync(ct))
+        {
             await SendAsync("tic", ct);
+        }
     }
 
     /// <summary>
@@ -331,7 +324,7 @@ public class Connection(
             do
             {
                 result = await _ws!.ReceiveAsync(buffer, ct);
-                if (result.MessageType == WebSocketMessageType.Close) { logger.LogInformation("[Socket] Close frame received"); return; }
+                if (result.MessageType == WebSocketMessageType.Close) { logger.LogInformation("Close frame received"); return; }
                 ms.Write(buffer, 0, result.Count);
             } while (!result.EndOfMessage);
 
@@ -391,7 +384,7 @@ public class Connection(
                 SetAuthenticated(authenticated);
                 if (wasAuthenticated != authenticated)
                 {
-                    logger.LogInformation("[Socket] sts authenticated={Auth}", authenticated);
+                    if (logger.IsEnabled(LogLevel.Information)) logger.LogInformation("sts authenticated={Auth}", authenticated);
                 }
 
                 if (!wasAuthenticated && authenticated)
@@ -403,11 +396,15 @@ public class Connection(
             {
                 var ticks = DateTime.UtcNow.Ticks;
                 foreach (var (key, value) in data)
+                {
                     if (int.TryParse(key, out _) && value is JsonValue jv && jv.TryGetValue<string>(out var raw))
+                    {
                         snapshots.Write(conid, key, raw, ticks);
+                    }
+                }
             }
         }
-        catch (Exception ex) { logger.LogWarning(ex, "[Socket] Message parse error"); }
+        catch (Exception ex) { logger.LogWarning(ex, "Message parse error"); }
     }
 
     /// <summary>
@@ -425,7 +422,9 @@ public class Connection(
     private async Task FlushPendingAsync(CancellationToken ct)
     {
         foreach (var (conid, fields) in _pendingSubscriptions)
+        {
             await SendAsync(BuildSmdMessage(conid, fields), ct);
+        }
     }
 
     /// <summary>
@@ -434,7 +433,7 @@ public class Connection(
     /// in-flight at a time.
     ///
     /// <para>
-    /// <b>Why the semaphore is required:</b> <see cref="ClientWebSocket.SendAsync"/>
+    /// <b>Why the semaphore is required:</b> SendAsync of ClientWebSocket
     /// throws <see cref="InvalidOperationException"/> if a concurrent send is already
     /// in progress. Three independent asynchronous paths call this method:
     /// <list type="bullet">
@@ -463,9 +462,14 @@ public class Connection(
         try
         {
             if (_ws?.State == WebSocketState.Open)
+            {
                 await _ws.SendAsync(Encoding.UTF8.GetBytes(message), WebSocketMessageType.Text, true, ct);
+            }
         }
-        catch (Exception ex) { logger.LogWarning(ex, "[Socket] Send failed: {Msg}", message); }
+        catch (Exception ex)
+        {
+            if (logger.IsEnabled(LogLevel.Warning)) logger.LogWarning(ex, "Send failed: {Msg}", message);
+        }
         finally { _sendLock.Release(); }
     }
 
@@ -479,9 +483,9 @@ public class Connection(
     /// to start streaming market data for a contract.
     /// </para>
     /// </summary>
+    /// <see href="https://www.interactivebrokers.com/campus/ibkr-api-page/cpapi-v1/#ws-sub-watchlist-data">Market Data Request</see>
     /// <param name="conid">The IBKR contract identifier.</param>
     /// <param name="fieldCodes">The array of numeric field code strings to subscribe to.</param>
-    /// <returns>The complete subscribe message ready for transmission.</returns>
-    private static string BuildSmdMessage(int conid, string[] fieldCodes) =>
-        $"smd+{conid}+{JsonSerializer.Serialize(new { fields = fieldCodes })}";
+    /// <returns>The complete subscription message ready for transmission.</returns>
+    private static string BuildSmdMessage(int conid, string[] fieldCodes) => $"smd+{conid}+{JsonSerializer.Serialize(new { fields = fieldCodes })}";
 }
