@@ -10,7 +10,7 @@ So keeping short note for myself.
 dotnet publish -c Release -r linux-x64 --self-contained true
 ssh clientportal 'systemctl stop clientportal'
 rsync -vz --delete --recursive Web/bin/Release/net10.0/linux-x64/publish/ clientportal:/opt/clientportal/
-ssh clientportal 'systemctl clientportal'
+ssh clientportal 'systemctl start clientportal'
 ```
 
 ## Prerequisites
