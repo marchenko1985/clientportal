@@ -94,6 +94,10 @@ public class Session(IHttpClientFactory httpClientFactory, Signer signer, IOptio
         tickleRes.EnsureSuccessStatusCode();
         LastTickleResponse = await tickleRes.Content.ReadFromJsonAsync<TickleResponse>(ct);
         LastPingTime = DateTime.UtcNow;
+        if (LastTickleResponse?.Server.AuthenticationStatus.Authenticated == false)
+        {
+            throw new InvalidOperationException($"Tickle response indicates not authenticated: {LastTickleResponse.Server.AuthenticationStatus.Message ?? LastTickleResponse.Server.AuthenticationStatus.Fail ?? "no message"}");
+        }
     }
 
     private HttpRequestMessage CreateSignedRequest(HttpMethod method, string path, HttpContent? content)

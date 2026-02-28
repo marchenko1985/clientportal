@@ -113,6 +113,12 @@ JSON object that contains:
 The full response is stored in `LastTickleResponse`. The reverse proxy reads
 `LastTickleResponse.Session` for the WebSocket cookie (`Cookie: api=<value>`).
 
+After storing the response, `PingAsync` checks `iserver.authStatus.authenticated`. IBKR
+can return HTTP 200 with `authenticated: false` when the brokerage session has silently
+expired — in that case an `InvalidOperationException` is thrown so the outer loop
+treats it the same as any other failure: `State = "Reinitializing"`, wait
+`ReinitializeDelay`, restart from `InitializeAsync`.
+
 All tickle requests (and SSO init) go through `CreateSignedRequest`, which uses
 `Signer.BuildApiAuthorizationHeader` with the current `LiveSessionToken`.
 
