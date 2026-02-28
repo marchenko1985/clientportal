@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Diagnostics.Metrics;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -8,12 +7,12 @@ using Microsoft.Extensions.Options;
 
 namespace Feed;
 
-public class HubService : BackgroundService
+public class Hub : BackgroundService
 {
-    private readonly SocketService _socketService;
-    private readonly SubscriptionsStore _subscriptionsStore;
-    private readonly SnapshotStore _snapshotStore;
-    private readonly ILogger<HubService> _logger;
+    private readonly Connection _connection;
+    private readonly Subscriptions _subscriptions;
+    private readonly Snapshots _snapshots;
+    private readonly ILogger<Hub> _logger;
     private readonly TimeSpan _batchInterval;
 
     private readonly ConcurrentDictionary<ConnectedClient, byte> _clients = new();
@@ -24,16 +23,16 @@ public class HubService : BackgroundService
 
     private long _activeClientSubscriptions;
 
-    public HubService(
-        SocketService socketService,
-        SubscriptionsStore subscriptionsStore,
-        SnapshotStore snapshotStore,
+    public Hub(
+        Connection connection,
+        Subscriptions subscriptions,
+        Snapshots snapshots,
         IOptions<Config> options,
-        ILogger<HubService> logger)
+        ILogger<Hub> logger)
     {
-        _socketService = socketService;
-        _subscriptionsStore = subscriptionsStore;
-        _snapshotStore = snapshotStore;
+        _connection = connection;
+        _subscriptions = subscriptions;
+        _snapshots = snapshots;
         _logger = logger;
         _batchInterval = options.Value.BatchInterval;
     }
@@ -91,7 +90,7 @@ public class HubService : BackgroundService
 
     private async Task CollectChangesAsync(CancellationToken ct)
     {
-        var reader = _snapshotStore.ReadChanges();
+        var reader = _snapshots.ReadChanges();
         await foreach (var tick in reader.ReadAllAsync(ct))
         {
             lock (_pendingChangesLock)
@@ -130,7 +129,7 @@ public class HubService : BackgroundService
                 var relevantFields = clientFields.Where(changedFields.Contains).ToArray();
                 if (relevantFields.Length == 0) continue;
 
-                var snapshot = _snapshotStore.GetSnapshot(conid, relevantFields);
+                var snapshot = _snapshots.GetSnapshot(conid, relevantFields);
                 if (snapshot.Count == 0) continue;
 
                 if (!batches.TryGetValue(client, out var batch))
@@ -206,10 +205,10 @@ public class HubService : BackgroundService
                     RemoveClientSubscription(client, conid, unsubscribeUpstream: true);
                 }
 
-                var upstreamFields = _subscriptionsStore.Subscribe(conid, fields);
-                if (upstreamFields != null) _socketService.Subscribe(conid, upstreamFields);
+                var upstreamFields = _subscriptions.Subscribe(conid, fields);
+                if (upstreamFields != null) _connection.Subscribe(conid, upstreamFields);
 
-                var snap = _snapshotStore.GetSnapshot(conid, fields);
+                var snap = _snapshots.GetSnapshot(conid, fields);
                 if (snap.Count > 0)
                 {
                     var obj = new JsonObject { ["conid"] = conid };
@@ -257,7 +256,7 @@ public class HubService : BackgroundService
 
         if (unsubscribeUpstream)
         {
-            _subscriptionsStore.Unsubscribe(conid);
+            _subscriptions.Unsubscribe(conid);
         }
     }
 

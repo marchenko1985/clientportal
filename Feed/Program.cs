@@ -9,19 +9,19 @@ if (allowedOrigins.Length > 0) builder.Services.AddCors(options => options.AddPo
 
 builder.Services.AddOptions<Config>().Bind(builder.Configuration.GetSection(nameof(Config))).ValidateOnStart();
 
-builder.Services.AddSingleton<SnapshotStore>();
-builder.Services.AddSingleton<SocketService>().AddHostedService(p => p.GetRequiredService<SocketService>());
-builder.Services.AddSingleton<SubscriptionsStore>(p =>
+builder.Services.AddSingleton<Connection>().AddHostedService(p => p.GetRequiredService<Connection>());
+builder.Services.AddSingleton<Subscriptions>(p =>
 {
-    var socketService = p.GetRequiredService<SocketService>();
-    var snapshotStore = p.GetRequiredService<SnapshotStore>();
-    return new SubscriptionsStore(conid =>
+    var socketService = p.GetRequiredService<Connection>();
+    var snapshotStore = p.GetRequiredService<Snapshots>();
+    return new Subscriptions(conid =>
     {
         socketService.Unsubscribe(conid);
         snapshotStore.RemoveConid(conid);
-    }, p.GetRequiredService<IOptions<Config>>(), p.GetRequiredService<ILogger<SubscriptionsStore>>());
+    }, p.GetRequiredService<IOptions<Config>>(), p.GetRequiredService<ILogger<Subscriptions>>());
 });
-builder.Services.AddSingleton<HubService>().AddHostedService(p => p.GetRequiredService<HubService>());
+builder.Services.AddSingleton<Snapshots>();
+builder.Services.AddSingleton<Hub>().AddHostedService(p => p.GetRequiredService<Hub>());
 
 
 var app = builder.Build();
@@ -31,7 +31,7 @@ app.UseWebSockets();
 
 app.MapGet("/", () => "Hello World!");
 
-app.Map("/ws", async (HttpContext ctx, HubService hub, IHostApplicationLifetime lifetime) =>
+app.Map("/ws", async (HttpContext ctx, Hub hub, IHostApplicationLifetime lifetime) =>
 {
     if (!ctx.WebSockets.IsWebSocketRequest) { ctx.Response.StatusCode = 426; return; }
     if (!allowedOrigins.Contains(ctx.Request.Headers.Origin.ToString())) { ctx.Response.StatusCode = 403; return; }

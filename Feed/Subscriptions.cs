@@ -10,10 +10,10 @@ namespace Feed;
 /// <b>Role in the system:</b> Many browser clients may simultaneously request market
 /// data for the same contract. Rather than opening a separate IBKR subscription for
 /// each client, this class multiplexes them: exactly one upstream subscription exists
-/// per conid, shared by all interested clients. <see cref="HubService"/> calls
+/// per conid, shared by all interested clients. <see cref="Hub"/> calls
 /// <see cref="Subscribe"/> and <see cref="Unsubscribe"/> (or
 /// repeated <see cref="Unsubscribe"/> calls) as clients connect and disconnect;
-/// <see cref="SocketService"/> is only instructed to send an upstream
+/// <see cref="Connection"/> is only instructed to send an upstream
 /// <c>smd+{conid}+{...}</c> or <c>umd+{conid}+{}</c> message when this class
 /// determines it is actually necessary.
 /// </para>
@@ -43,7 +43,7 @@ namespace Feed;
 /// <para>
 /// <b>Delayed unsubscribe:</b> when the last subscriber for a conid
 /// leaves, the upstream unsubscribe is deliberately deferred by
-/// <see cref="InteractiveBrokersOptions.UnsubscribeDelay"/>. If a browser client
+/// <see cref="Config.UnsubscribeDelay"/>. If a browser client
 /// reconnects within that window (e.g. after a page reload or a brief network
 /// hiccup) and re-subscribes, the pending timer is cancelled and no upstream
 /// unsubscribe is ever sent — the IBKR subscription stays live and market data
@@ -51,7 +51,7 @@ namespace Feed;
 /// subscribe round-trip and the associated latency gap in data delivery.
 /// </para>
 /// </summary>
-public class SubscriptionsStore(Action<int> onDelayedUnsubscribe, IOptions<Config> options, ILogger<SubscriptionsStore> logger)
+public class Subscriptions(Action<int> onDelayedUnsubscribe, IOptions<Config> options, ILogger<Subscriptions> logger)
 {
     private readonly TimeSpan _unsubscribeDelay = options.Value.UnsubscribeDelay;
 
@@ -126,8 +126,8 @@ public class SubscriptionsStore(Action<int> onDelayedUnsubscribe, IOptions<Confi
     /// </para>
     ///
     /// <para>
-    /// <b>Upstream message decision:</b> the caller (<see cref="HubService"/>) uses
-    /// the returned value to decide whether and what to send to <see cref="SocketService"/>:
+    /// <b>Upstream message decision:</b> the caller (<see cref="Hub"/>) uses
+    /// the returned value to decide whether and what to send to <see cref="Connection"/>:
     /// <list type="bullet">
     ///   <item>
     ///     <description>
@@ -242,7 +242,7 @@ public class SubscriptionsStore(Action<int> onDelayedUnsubscribe, IOptions<Confi
     ///       time is invoked with the conid, and the pending entry plus field set are
     ///       cleaned up.
     ///       The callback is responsible for sending <c>umd+{conid}+{}</c> to IBKR
-    ///       via <see cref="SocketService"/>.
+    ///       via <see cref="Connection"/>.
     ///     </description>
     ///   </item>
     /// </list>

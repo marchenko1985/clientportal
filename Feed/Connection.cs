@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Diagnostics.Metrics;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -10,12 +9,12 @@ namespace Feed;
 
 /// <summary>
 /// Maintains the single upstream WebSocket connection to the IBKR Trader Workstation
-/// (TWS) gateway and fans out received market-data ticks to <see cref="SnapshotStore"/>
+/// (TWS) gateway and fans out received market-data ticks to <see cref="Snapshots"/>
 /// for downstream browser clients.
 ///
 /// <para>
 /// <b>Role in the system:</b> this service sits between the IBKR server and the
-/// browser-facing <c>HubService</c>. It owns exactly one <see cref="ClientWebSocket"/>
+/// browser-facing <c>Hub</c>. It owns exactly one <see cref="ClientWebSocket"/>
 /// at a time and serialises all outgoing frames through a <see cref="SemaphoreSlim"/>
 /// so that concurrent callers (heartbeat loop, subscribe/unsubscribe, flush) never
 /// violate the WebSocket protocol's requirement that at most one send is in-flight on
@@ -80,19 +79,19 @@ namespace Feed;
 /// </list>
 /// </para>
 /// </summary>
-public class SocketService(
-    SnapshotStore snapshotStore,
+public class Connection(
+    Snapshots snapshots,
     IOptions<Config> options,
     IConfiguration configuration,
-    ILogger<SocketService> logger) : BackgroundService
+    ILogger<Connection> logger) : BackgroundService
 {
     /// <summary>
     /// The persistent map of conid → field-code array for every upstream market-data
-    /// subscription that is currently desired by <c>HubService</c>.
+    /// subscription that is currently desired by <c>Hub</c>.
     ///
     /// <para>
     /// This dictionary is written by <see cref="Subscribe"/> and <see cref="Unsubscribe"/>
-    /// (which are called from <c>HubService</c>) and read by <see cref="FlushPendingAsync"/>
+    /// (which are called from <c>Hub</c>) and read by <see cref="FlushPendingAsync"/>
     /// after every successful reconnect. Because the dictionary outlives individual
     /// WebSocket connections, subscriptions survive network drops and reconnects
     /// without any coordination required from callers.
@@ -125,7 +124,7 @@ public class SocketService(
     /// ready to receive and deliver market-data subscriptions.
     ///
     /// <para>
-    /// <b>How callers use this:</b> <c>HubService</c> reads this property when
+    /// <b>How callers use this:</b> <c>Hub</c> reads this property when
     /// composing status messages to browser clients so that the UI can indicate
     /// whether the upstream data feed is live. The property is set to
     /// <see langword="true"/> inside <see cref="OnMessage"/> when the authenticated
@@ -160,7 +159,7 @@ public class SocketService(
     /// </para>
     ///
     /// <para>
-    /// This method is called by <c>HubService</c> when a browser client requests
+    /// This method is called by <c>Hub</c> when a browser client requests
     /// market data for a contract that has no existing upstream subscription (or when
     /// a new field code must be added to an existing subscription).
     /// </para>
@@ -169,7 +168,7 @@ public class SocketService(
     /// <param name="fieldCodes">
     /// The field codes to request from IBKR (e.g. <c>["31", "84", "86"]</c>). This
     /// array should represent the full union of fields needed for this conid as
-    /// computed by <c>SubscriptionsStore</c>, not just the incremental addition.
+    /// computed by <c>Subscriptions</c>, not just the incremental addition.
     /// </param>
     public void Subscribe(int conid, string[] fieldCodes)
     {
@@ -189,7 +188,7 @@ public class SocketService(
     /// </para>
     ///
     /// <para>
-    /// This method is called by <c>HubService</c> (via <c>SubscriptionsStore</c>'s
+    /// This method is called by <c>Hub</c> (via <c>Subscriptions</c>'s
     /// delayed-unsubscribe callback) once all browser clients that were watching a
     /// given contract have disconnected and the configured grace period has elapsed.
     /// </para>
@@ -362,7 +361,7 @@ public class SocketService(
     ///     <description>
     ///       Market-data tick for a contract. Every JSON key whose name is a pure
     ///       integer string (e.g. <c>"31"</c>, <c>"84"</c>) is treated as an IBKR
-    ///       field code. The raw string value is written to <see cref="SnapshotStore"/>
+    ///       field code. The raw string value is written to <see cref="Snapshots"/>
     ///       so that downstream browser clients can read the latest value.
     ///       Non-numeric keys such as <c>"_updated"</c>, <c>"conid"</c>, and
     ///       <c>"topic"</c> are silently skipped.
@@ -405,7 +404,7 @@ public class SocketService(
                 var ticks = DateTime.UtcNow.Ticks;
                 foreach (var (key, value) in data)
                     if (int.TryParse(key, out _) && value is JsonValue jv && jv.TryGetValue<string>(out var raw))
-                        snapshotStore.Write(conid, key, raw, ticks);
+                        snapshots.Write(conid, key, raw, ticks);
             }
         }
         catch (Exception ex) { logger.LogWarning(ex, "[Socket] Message parse error"); }
@@ -420,7 +419,7 @@ public class SocketService(
     /// authentication via a <c>sts</c> message. Because <c>_pendingSubscriptions</c>
     /// is a persistent dictionary that is not cleared on disconnect, this single call
     /// is sufficient to restore the full set of active market-data feeds after any
-    /// reconnect — no coordination with <c>HubService</c> is required.
+    /// reconnect — no coordination with <c>Hub</c> is required.
     /// </para>
     /// </summary>
     private async Task FlushPendingAsync(CancellationToken ct)

@@ -8,8 +8,8 @@ namespace Feed;
 /// from the upstream IBKR WebSocket connection.
 ///
 /// <para>
-/// <b>Role in the system:</b> <see cref="SocketService"/> writes raw market-data values
-/// here as they arrive from IBKR. <see cref="HubService"/> reads current values from
+/// <b>Role in the system:</b> <see cref="Connection"/> writes raw market-data values
+/// here as they arrive from IBKR. <see cref="Hub"/> reads current values from
 /// this store when flushing event-driven batch updates collected from the change channel.
 /// </para>
 ///
@@ -28,7 +28,7 @@ namespace Feed;
 /// verbatim — no parsing or normalisation is performed.
 /// </para>
 /// </summary>
-public class SnapshotStore
+public class Snapshots
 {
     public readonly record struct MarketTick(int Conid, string Field, long Ticks);
 
@@ -37,7 +37,7 @@ public class SnapshotStore
     /// Each entry holds the latest raw string value and the <see cref="DateTime.Ticks"/>
     /// timestamp at which that value was last <i>changed</i> (not merely received).
     /// <see cref="ConcurrentDictionary{TKey,TValue}"/> is used so that
-    /// <see cref="SocketService"/> and <see cref="HubService"/> can read/write
+    /// <see cref="Connection"/> and <see cref="Hub"/> can read/write
     /// concurrently without explicit locking.
     /// </summary>
     private readonly ConcurrentDictionary<(int Conid, string Field), (string Value, long Ticks)> _store = new();
@@ -134,7 +134,7 @@ public class SnapshotStore
     /// <param name="fields">
     /// The set of field codes to retrieve (e.g. <c>["31", "84", "86"]</c>).
     /// Typically the union of fields all current subscribers to this contract have
-    /// requested, as tracked by <c>SubscriptionsStore</c>.
+    /// requested, as tracked by <c>Subscriptions</c>.
     /// </param>
     /// <returns>
     /// A read-only dictionary mapping each field code that is present in the store to
