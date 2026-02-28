@@ -20,7 +20,7 @@ Once that happened we might want to try run some rest api calls like this
 **search**
 
 ```bash
-curl -s 'http://localhost:5000/v1/api/iserver/secdef/search?symbol=AAPL' | jq -r '.[0].conid'
+curl -s 'http://localhost:5001/v1/api/iserver/secdef/search?symbol=AAPL' | jq -r '.[0].conid'
 ```
 
 if everything fine should return conid of Apple
@@ -32,7 +32,7 @@ if everything fine should return conid of Apple
 **history**
 
 ```bash
-curl -s 'http://localhost:5000/v1/api/iserver/marketdata/history?conid=265598&bar=1d&period=1w' | jq -r '.data[-1].c'
+curl -s 'http://localhost:5001/v1/api/iserver/marketdata/history?conid=265598&bar=1d&period=1w' | jq -r '.data[-1].c'
 ```
 
 if everything fine should return current price of Apple
@@ -51,7 +51,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using var ws = new ClientWebSocket();
-await ws.ConnectAsync(new Uri("ws://localhost:5000/v1/api/ws"), CancellationToken.None);
+await ws.ConnectAsync(new Uri("ws://localhost:5001/v1/api/ws"), CancellationToken.None);
 Console.WriteLine("connected");
 var buffer = new byte[8192];
 while (ws.State == WebSocketState.Open) {
@@ -78,7 +78,7 @@ If Bun is available
 **test.js**
 
 ```js
-const ws = new WebSocket("ws://localhost:5000/v1/api/ws");
+const ws = new WebSocket("ws://localhost:5001/v1/api/ws");
 
 ws.onopen = () => console.log("connected");
 ws.onmessage = (event) => console.log(String(event.data));
