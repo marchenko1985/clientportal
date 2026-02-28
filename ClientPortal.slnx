@@ -1,3 +1,4 @@
 <Solution>
+  <Project Path="Feed/Feed.csproj" />
   <Project Path="Gateway\Gateway.csproj" />
 </Solution>
