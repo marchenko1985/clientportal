@@ -9,7 +9,7 @@ So keeping short note for myself.
 ```bash
 dotnet publish -c Release -r linux-x64 --self-contained true
 ssh clientportal 'systemctl stop clientportal'
-rsync -vz --delete --recursive Web/bin/Release/net10.0/linux-x64/publish/ clientportal:/opt/clientportal/
+rsync -vz --delete --recursive Gateway/bin/Release/net10.0/linux-x64/publish/ clientportal:/opt/clientportal/
 ssh clientportal 'systemctl start clientportal'
 ```
 
@@ -36,7 +36,7 @@ dotnet publish -c Release -r linux-x64 --self-contained true
 Published build will be here:
 
 ```
-Web/bin/Release/net10.0/linux-x64/publish/
+Gateway/bin/Release/net10.0/linux-x64/publish/
 ```
 
 ## Deploying
@@ -50,7 +50,7 @@ What we are going to do is to stop service, rsync fresh build, start service bac
 ssh clientportal 'systemctl stop clientportal'
 
 # 2. rsync our build
-rsync -vz --delete --recursive Web/bin/Release/net10.0/linux-x64/publish/ clientportal:/opt/clientportal/
+rsync -vz --delete --recursive Gateway/bin/Release/net10.0/linux-x64/publish/ clientportal:/opt/clientportal/
 
 # 3. start service
 ssh clientportal 'systemctl clientportal'
@@ -69,7 +69,7 @@ Navigate to /opt/clientportal
 And start app by running
 
 ```bash
-ASPNETCORE_URLS=http://127.0.0.1:5000 ASPNETCORE_ENVIRONMENT=Production ./Web
+ASPNETCORE_URLS=http://127.0.0.1:5000 ASPNETCORE_ENVIRONMENT=Production ./Gateway
 ```
 
 Also you might want to change log level and formatter to better understand whats going on, or just add `| jq` at the end to have pretty printed json logs

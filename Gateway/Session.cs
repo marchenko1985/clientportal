@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
-namespace Web;
+namespace Gateway;
 
 /// <summary>
 /// Background service that owns the IBKR brokerage session for the lifetime of the

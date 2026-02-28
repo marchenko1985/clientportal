@@ -5,13 +5,13 @@ For local development we have `appsettings.Development.json` with test credentia
 So we should be able to run app:
 
 ```bash
-dotnet run --project Web
+dotnet run --project Gateway
 ```
 
 And after a while, in logs we should see:
 
 ```log
-info: Web.Session[0]
+info: Gateway.Session[0]
       Interactive Brokers session initialized, keep-alive started.
 ```
 

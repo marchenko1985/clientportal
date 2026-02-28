@@ -1,7 +1,7 @@
 using System.Numerics;
 using System.Security.Cryptography;
 
-namespace Web;
+namespace Gateway;
 
 /// <summary>
 /// Strongly-typed options class for the IBKR OAuth gateway, bound from the <c>Config</c>

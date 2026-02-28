@@ -6,7 +6,7 @@ After=network.target
 User=www-data
 Type=simple
 WorkingDirectory=/opt/clientportal
-ExecStart=/opt/clientportal/Web
+ExecStart=/opt/clientportal/Gateway
 Restart=on-failure
 RestartSec=5
 Environment=ASPNETCORE_ENVIRONMENT=Production

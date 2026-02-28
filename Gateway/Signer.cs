@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Options;
 
-namespace Web;
+namespace Gateway;
 
 /// <summary>
 /// Produces OAuth authorization headers and the live session token for Interactive

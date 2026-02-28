@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 dotnet build             # build
-dotnet run --project Web # run — launchSettings.json sets http://localhost:5000 and ASPNETCORE_ENVIRONMENT=Development
+dotnet run --project Gateway # run — launchSettings.json sets http://localhost:5000 and ASPNETCORE_ENVIRONMENT=Development
 ```
 
 `TreatWarningsAsErrors=True` is set in the project — warnings fail the build.
@@ -19,15 +19,15 @@ See `Test.md` for curl and WebSocket smoke test commands. There are no automated
 
 ## Architecture
 
-Four source files in `Web/`, plus a `Pages/` sub-folder with the status UI:
+Four source files in `Gateway/`, plus a `Pages/` sub-folder with the status UI:
 
-| File / Folder         | Role                                                                                                                                                                          |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Program.cs`          | DI wiring, middleware pipeline, YARP transform                                                                                                                                |
-| `Config.cs`           | Options class bound from the `Config` config section                                                                                                                          |
-| `Signer.cs`           | Stateless OAuth signing — live session token request and regular API requests                                                                                                 |
-| `Session.cs`          | `BackgroundService` that owns the IBKR session lifecycle; also contains `HealthCheck` and the JSON response record types (`TickleResponse`, `Server`, `AuthenticationStatus`) |
-| `Pages/Index.cshtml`  | Razor Pages status page served at `/` — shows session state indicators                                                                                                        |
+| File / Folder        | Role                                                                                                                                                                          |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Program.cs`         | DI wiring, middleware pipeline, YARP transform                                                                                                                                |
+| `Config.cs`          | Options class bound from the `Config` config section                                                                                                                          |
+| `Signer.cs`          | Stateless OAuth signing — live session token request and regular API requests                                                                                                 |
+| `Session.cs`         | `BackgroundService` that owns the IBKR session lifecycle; also contains `HealthCheck` and the JSON response record types (`TickleResponse`, `Server`, `AuthenticationStatus`) |
+| `Pages/Index.cshtml` | Razor Pages status page served at `/` — shows session state indicators                                                                                                        |
 
 ### Session lifecycle
 
@@ -52,7 +52,7 @@ The detection uses `Headers.Upgrade == "websocket"` rather than `HttpContext.Web
 
 `Config` is bound from the `Config` JSON section. The three `byte[]` fields (`AccessTokenSecret`, `DhPrimeBytes`, `PrivateSignatureBytes`) are stored as base64 in `appsettings.json` — the .NET binder decodes them automatically. A `PostConfigure` in `Program.cs` converts them to their runtime forms (`BigInteger` and `RSA`); properties needed only at runtime (`DhPrime`, `PrivateSignature`) have `internal set` and are not config-bound.
 
-See `Web/Config.cs` (the `DhPrimeBytes`, `AccessTokenSecret`, `PrivateSignatureBytes` XML comments) for the one-time extraction commands used to produce the base64 values from the PEM files that IBKR provides.
+See `Gateway/Config.cs` (the `DhPrimeBytes`, `AccessTokenSecret`, `PrivateSignatureBytes` XML comments) for the one-time extraction commands used to produce the base64 values from the PEM files that IBKR provides.
 
 ### HTTP client logging — named options gotcha
 
@@ -94,6 +94,6 @@ UseForwardedHeaders → UseCors → WebSocket origin check (inline middleware) �
 
 ## Reference docs
 
-- `Web/README.md` — Web project overview, proxied routes, running instructions
+- `Gateway/README.md` — Gateway project overview, proxied routes, running instructions
 - `Test.md` — curl and WebSocket smoke test commands
-- Implementation details (session lifecycle, OAuth signing, config fields) live as XML doc comments in `Web/Session.cs`, `Web/Signer.cs`, `Web/Config.cs`
+- Implementation details (session lifecycle, OAuth signing, config fields) live as XML doc comments in `Gateway/Session.cs`, `Gateway/Signer.cs`, `Gateway/Config.cs`

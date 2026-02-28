@@ -50,10 +50,10 @@ In production, credentials can also be injected as environment variables (e.g. `
 ### Local development
 
 ```bash
-dotnet run --project Web
+dotnet run --project Gateway
 ```
 
-`Web/Properties/launchSettings.json` binds to `http://localhost:5000` and sets `ASPNETCORE_ENVIRONMENT=Development`, which loads credentials from `Web/appsettings.Development.json`.
+`Gateway/Properties/launchSettings.json` binds to `http://localhost:5000` and sets `ASPNETCORE_ENVIRONMENT=Development`, which loads credentials from `Gateway/appsettings.Development.json`.
 
 See [Test.md](../Test.md) for curl and WebSocket smoke test commands.
 

@@ -5,7 +5,7 @@ using Microsoft.Extensions.Compliance.Classification;
 using Microsoft.Extensions.Compliance.Redaction;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Options;
-using Web;
+using Gateway;
 using Yarp.ReverseProxy.Transforms;
 
 var builder = WebApplication.CreateBuilder(args);
