@@ -1,19 +1,17 @@
 [Unit]
-Description=clientportal
+Description=gateway
 After=network.target
 
 [Service]
 User=www-data
 Type=simple
-WorkingDirectory=/opt/clientportal
-ExecStart=/opt/clientportal/Gateway
+WorkingDirectory=/opt/gateway
+ExecStart=/opt/gateway/Gateway
 Restart=on-failure
 RestartSec=5
 Environment=ASPNETCORE_ENVIRONMENT=Production
-Environment=ASPNETCORE_URLS=http://127.0.0.1:5000
+Environment=ASPNETCORE_URLS=http://127.0.0.1:5001
 Environment=DOTNET_GCServer=1
-
-# without this, somehow logs are not accessible from journalctl
 StandardOutput=journal
 StandardError=journal
 
