@@ -6,6 +6,12 @@ A minimal .NET 10 reverse proxy that authenticates [IBKR Web API](https://www.in
 
 It maintains a persistent brokerage session in the background and transparently signs all proxied HTTP and WebSocket connections — your front-end app talks to it like a plain API, with no OAuth logic on the client side.
 
+# IBKR Web Api
+
+- [Reference](https://www.interactivebrokers.com/campus/ibkr-api-page/webapi-ref/)
+- [Changelog](https://www.interactivebrokers.com/campus/ibkr-api-page/web-api-changelog/)
+- [WebSockets](https://www.interactivebrokers.com/campus/ibkr-api-page/cpapi-v1/#websockets)
+
 ---
 
 ## How it works
