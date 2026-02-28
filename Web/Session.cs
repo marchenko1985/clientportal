@@ -8,15 +8,86 @@ using Microsoft.Extensions.Options;
 
 namespace Web;
 
+/// <summary>
+/// Background service that owns the IBKR brokerage session for the lifetime of the
+/// application, maintaining a valid live session token and keeping the session alive
+/// with periodic pings.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Why this exists:</b> the IBKR API requires a live session token before any
+/// request can be made. The token is derived via a Diffie-Hellman key exchange at
+/// startup and must be refreshed after any failure. Once established, the session must
+/// be kept alive with <c>POST /v1/api/tickle</c> at regular intervals — IBKR silently
+/// expires sessions that go quiet. This service owns that entire lifecycle so the rest
+/// of the application can read <see cref="LiveSessionToken"/> without thinking about
+/// authentication state.
+/// </para>
+/// <para>
+/// <b>State machine:</b>
+/// <list type="number">
+///   <item><description>
+///     <c>Initializing</c> — <see cref="InitializeAsync"/> runs the three-step startup
+///     sequence: live session token handshake → SSO session init → first tickle.
+///   </description></item>
+///   <item><description>
+///     <c>Ready</c> — <see cref="KeepAliveAsync"/> loops, calling <see cref="PingAsync"/>
+///     every <see cref="Config.PingInterval"/>.
+///   </description></item>
+///   <item><description>
+///     <c>Reinitializing</c> — any exception from either phase is caught, logged, and
+///     followed by a <see cref="Config.ReinitializeDelay"/> wait before the entire
+///     sequence restarts from step 1.
+///   </description></item>
+///   <item><description>
+///     <c>Stopping</c> — <see cref="OperationCanceledException"/> on the application's
+///     cancellation token exits the loop cleanly.
+///   </description></item>
+/// </list>
+/// </para>
+/// <para>
+/// <b>Public state consumed by <c>Program.cs</c>:</b> <see cref="LiveSessionToken"/>
+/// is used as the HMAC-SHA256 signing key for every proxied HTTP request.
+/// <see cref="LastTickleResponse"/> provides the WebSocket session cookie value
+/// (<c>Cookie: api=&lt;session&gt;</c>) required for WebSocket upgrades through YARP.
+/// </para>
+/// </remarks>
 public class Session(IHttpClientFactory httpClientFactory, Signer signer, IOptions<Config> config, ILogger<Session> logger) : BackgroundService
 {
     private readonly HttpClient _httpClient = httpClientFactory.CreateClient(nameof(Session));
 
+    /// <summary>
+    /// The response from the most recent <c>POST /v1/api/tickle</c> call.
+    /// <see cref="TickleResponse.Session"/> contains the WebSocket cookie value used by
+    /// the YARP transform for WebSocket upgrades (<c>Cookie: api=&lt;value&gt;</c>).
+    /// <see langword="null"/> until the first successful <see cref="PingAsync"/> call.
+    /// </summary>
     public TickleResponse? LastTickleResponse { get; private set; }
+
+    /// <summary>
+    /// Base64-encoded live session token derived from the most recent DH exchange.
+    /// Used as the HMAC-SHA256 key when signing proxied API requests via
+    /// <see cref="Signer.BuildApiAuthorizationHeader"/>. <see langword="null"/> until
+    /// the first successful <see cref="InitializeAsync"/> completes.
+    /// </summary>
     public string? LiveSessionToken { get; private set; }
+
+    /// <summary>UTC timestamp of the most recent successful tickle. <see langword="null"/> until the first ping.</summary>
     public DateTime? LastPingTime { get; private set; }
+
+    /// <summary>
+    /// Current lifecycle phase: <c>"Initializing"</c>, <c>"Ready"</c>,
+    /// <c>"Reinitializing"</c>, or <c>"Stopping"</c>. Exposed on the
+    /// <c>/session</c> JSON endpoint.
+    /// </summary>
     public string State { get; private set; } = "Initializing";
 
+    /// <summary>
+    /// <see langword="true"/> when <see cref="State"/> is <c>"Ready"</c>, a live
+    /// session token exists, and the last tickle response confirms
+    /// <c>authenticated=true</c>. Used by <see cref="HealthCheck"/> to report
+    /// application health.
+    /// </summary>
     public bool Healthy => State == "Ready" && LiveSessionToken != null && LastTickleResponse?.Server.AuthenticationStatus.Authenticated == true;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -54,6 +125,30 @@ public class Session(IHttpClientFactory httpClientFactory, Signer signer, IOptio
         }
     }
 
+    /// <summary>
+    /// Runs the three-step IBKR session startup sequence.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Step 1 — Live session token:</b> sends <c>POST /v1/api/oauth/live_session_token</c>
+    /// with an RSA-SHA256 signed OAuth header (including a Diffie-Hellman challenge).
+    /// The server responds with a DH public value as a hex string. The hex may have an
+    /// odd number of characters (a leading nibble is sometimes stripped by the server);
+    /// it is normalised to even length before being parsed to a <see cref="BigInteger"/>.
+    /// Both the server's DH value and the client's private exponent are passed to
+    /// <see cref="Signer.ComputeLiveSessionToken"/> to derive <see cref="LiveSessionToken"/>.
+    /// </para>
+    /// <para>
+    /// <b>Step 2 — SSO session:</b> sends <c>POST /v1/api/iserver/auth/ssodh/init</c>
+    /// with <c>publish=true, compete=true</c>. This activates the brokerage session.
+    /// <c>compete=true</c> allows taking over from an existing active session on the same account.
+    /// </para>
+    /// <para>
+    /// <b>Step 3 — First tickle:</b> calls <see cref="PingAsync"/> immediately to confirm
+    /// the session is live and populate <see cref="LastTickleResponse"/> before
+    /// <see cref="State"/> is set to <c>"Ready"</c>.
+    /// </para>
+    /// </remarks>
     private async Task InitializeAsync(CancellationToken ct)
     {
         var uri = new Uri(_httpClient.BaseAddress!, "/v1/api/oauth/live_session_token");
@@ -87,6 +182,19 @@ public class Session(IHttpClientFactory httpClientFactory, Signer signer, IOptio
         }
     }
 
+    /// <summary>
+    /// Sends <c>POST /v1/api/tickle</c>, stores the response in
+    /// <see cref="LastTickleResponse"/>, and throws if the brokerage session reports
+    /// it is no longer authenticated.
+    /// </summary>
+    /// <remarks>
+    /// IBKR can return HTTP 200 with <c>iserver.authStatus.authenticated=false</c>
+    /// when the brokerage session has silently expired — a successful HTTP status code
+    /// does not guarantee the session is still valid. When this occurs,
+    /// <see cref="InvalidOperationException"/> is thrown so the outer loop in
+    /// <see cref="ExecuteAsync"/> treats it like any other failure and restarts
+    /// the full initialization sequence.
+    /// </remarks>
     private async Task PingAsync(CancellationToken ct)
     {
         using var tickleReq = CreateSignedRequest(HttpMethod.Post, "/v1/api/tickle", null);
@@ -100,6 +208,11 @@ public class Session(IHttpClientFactory httpClientFactory, Signer signer, IOptio
         }
     }
 
+    /// <summary>
+    /// Builds an <see cref="HttpRequestMessage"/> with a full HMAC-SHA256
+    /// <c>Authorization: OAuth …</c> header signed with <see cref="LiveSessionToken"/>.
+    /// Used for all post-handshake requests (SSO session init, tickle).
+    /// </summary>
     private HttpRequestMessage CreateSignedRequest(HttpMethod method, string path, HttpContent? content)
     {
         var uri = new Uri(_httpClient.BaseAddress!, path);
