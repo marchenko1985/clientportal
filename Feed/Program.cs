@@ -28,6 +28,7 @@ var app = builder.Build();
 
 if (allowedOrigins.Length > 0) app.UseCors("AllowedOrigins");
 app.UseWebSockets();
+app.UseStaticFiles();
 
 app.MapGet("/", () => "Hello World!");
 
