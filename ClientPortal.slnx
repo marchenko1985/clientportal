@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="CookieGateway/CookieGateway.csproj" />
   <Project Path="Feed/Feed.csproj" />
   <Project Path="Gateway\Gateway.csproj" />
 </Solution>

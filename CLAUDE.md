@@ -6,8 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 dotnet build             # build
-dotnet run --project Gateway # run — launchSettings.json sets http://localhost:5001 and ASPNETCORE_ENVIRONMENT=Development
-dotnet run --project Feed # run — launchSettings.json sets http://localhost:5002 and ASPNETCORE_ENVIRONMENT=Development
+dotnet run --project Gateway       # run — launchSettings.json sets http://localhost:5001 and ASPNETCORE_ENVIRONMENT=Development
+dotnet run --project CookieGateway # run — launchSettings.json sets http://localhost:5001 and ASPNETCORE_ENVIRONMENT=Development
+dotnet run --project Feed          # run — launchSettings.json sets http://localhost:5002 and ASPNETCORE_ENVIRONMENT=Development
 ```
 
 `TreatWarningsAsErrors=True` is set in projects — warnings fail the build.
@@ -23,6 +24,8 @@ See `Test.md` for curl and WebSocket smoke test commands. There are no automated
 ---
 
 ## Architecture
+
+### Gateway project
 
 Four source files in `Gateway/`, plus a `Pages/` sub-folder with the status UI:
 
@@ -107,6 +110,41 @@ UseForwardedHeaders → UseCors → WebSocket origin check (inline middleware) �
 
 ---
 
+## CookieGateway project
+
+Alternative gateway that authenticates with IBKR using username/password (SRP-6) instead of OAuth signing. Drop-in replacement for `Gateway` — runs on the same port 5001.
+
+### Key files
+
+| File / Folder | Role |
+|---|---|
+| `Program.cs` | DI wiring, middleware pipeline, YARP transform |
+| `Config.cs` | Options bound from the `Config` config section (Username, Password, UserAgent, PingInterval, ReinitializeDelay) |
+| `Session.cs` | `BackgroundService` — SRP login, cookie storage, keep-alive; exposes `SessionCookie` for the YARP transform |
+| `Login/` | SRP-6 (`SprClient`), RSA-e3 (`RsaUtils`), SSODH DH (`SsoDh`) — ports of IBKR's JS crypto |
+| `Extensions/` | `PostAsFormAsync`, `ToUnsignedBigInteger`, `ToUnsignedHexString` helpers |
+| `Pages/Index.cshtml` | Status page at `/` |
+
+### Session lifecycle
+
+`Session` runs as a `BackgroundService`. On startup it:
+
+1. Performs a full SRP-6 login on `ndcdyn.interactivebrokers.com` (7 steps: INIT → COMPLETEAUTH → Dispatcher).
+2. Calls `POST /v1/api/iserver/auth/ssodh/init` to activate the brokerage session.
+3. Enters a keep-alive loop calling `POST /v1/api/tickle` every `PingInterval`.
+
+Cookies are stored in-memory as `SessionCookie` (a `name=value; ...` string). `Set-Cookie` headers from all API responses are merged into this string.
+
+### YARP transform
+
+The single request transform injects `Cookie: <SessionCookie>` on all proxied requests (both HTTP and WebSocket). No OAuth Authorization header is built or sent.
+
+### Credentials
+
+Set `Username` and `Password` in `CookieGateway/appsettings.Development.json` (gitignored) or via env vars `Config__Username` / `Config__Password`.
+
+---
+
 ## Feed project
 
 WebSocket multiplexer that fans IBKR market data from one upstream connection to many browser clients.
@@ -145,6 +183,7 @@ Each client's requested fields are tracked individually in `Subscriptions`. When
 ## Reference docs
 
 - `Gateway/README.md` — Gateway project overview, proxied routes, running instructions
+- `CookieGateway/README.md` — CookieGateway project overview, credentials setup, smoke tests
 - `Feed/README.md` — Feed project overview, architecture, wire protocol, endpoints
 - `Test.md` — curl and WebSocket smoke test commands
 - Implementation details (session lifecycle, OAuth signing, config fields) live as XML doc comments in `Gateway/Session.cs`, `Gateway/Signer.cs`, `Gateway/Config.cs`
