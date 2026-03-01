@@ -19,7 +19,18 @@ We have decided to store docs as xml doc strings close to source code, if code e
 
 ### Manual testing
 
-See `Test.md` for curl and WebSocket smoke test commands. There are no automated tests.
+There are no automated tests. After starting the app and seeing the session initialized log, verify with:
+
+```bash
+# Search — should return conid 265598
+curl -s 'http://localhost:5001/v1/api/iserver/secdef/search?symbol=AAPL' | jq -r '.[0].conid'
+
+# History — should return a recent AAPL closing price
+curl -s 'http://localhost:5001/v1/api/iserver/marketdata/history?conid=265598&bar=1d&period=1w' | jq -r '.data[-1].c'
+
+# Health check
+curl http://localhost:5001/health
+```
 
 ---
 
@@ -116,14 +127,14 @@ Alternative gateway that authenticates with IBKR using username/password (SRP-6)
 
 ### Key files
 
-| File / Folder | Role |
-|---|---|
-| `Program.cs` | DI wiring, middleware pipeline, YARP transform |
-| `Config.cs` | Options bound from the `Config` config section (Username, Password, UserAgent, PingInterval, ReinitializeDelay) |
-| `Session.cs` | `BackgroundService` — SRP login, cookie storage, keep-alive; exposes `SessionCookie` for the YARP transform |
-| `Login/` | SRP-6 (`SprClient`), RSA-e3 (`RsaUtils`), SSODH DH (`SsoDh`) — ports of IBKR's JS crypto |
-| `Extensions/` | `PostAsFormAsync`, `ToUnsignedBigInteger`, `ToUnsignedHexString` helpers |
-| `Pages/Index.cshtml` | Status page at `/` |
+| File / Folder        | Role                                                                                                            |
+| -------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `Program.cs`         | DI wiring, middleware pipeline, YARP transform                                                                  |
+| `Config.cs`          | Options bound from the `Config` config section (Username, Password, UserAgent, PingInterval, ReinitializeDelay) |
+| `Session.cs`         | `BackgroundService` — SRP login, cookie storage, keep-alive; exposes `SessionCookie` for the YARP transform     |
+| `Login/`             | SRP-6 (`SprClient`), RSA-e3 (`RsaUtils`), SSODH DH (`SsoDh`) — ports of IBKR's JS crypto                        |
+| `Extensions/`        | `PostAsFormAsync`, `ToUnsignedBigInteger`, `ToUnsignedHexString` helpers                                        |
+| `Pages/Index.cshtml` | Status page at `/`                                                                                              |
 
 ### Session lifecycle
 
@@ -151,21 +162,23 @@ WebSocket multiplexer that fans IBKR market data from one upstream connection to
 
 ### Key services
 
-| File | Role |
-|---|---|
-| `Feed/Connection.cs` | `BackgroundService` — owns the single upstream IBKR WebSocket; reconnects with exponential back-off; publishes `connected`/`authenticated` events on `SystemMessages` channel |
-| `Feed/Snapshots.cs` | Thread-safe `(conid, field) → value` cache; deduplicates writes; publishes change events; supports `ClearAll()` after prolonged disconnect |
-| `Feed/Subscriptions.cs` | Per-client field tracking; shrinkable field union; `Action<int, string[]?>` callback fires after `UnsubscribeDelay` |
-| `Feed/Hub.cs` | `BackgroundService` — accepts browser WebSocket clients; batches ticks; broadcasts system events |
-| `Feed/Program.cs` | DI wiring; `/ws`, `/health`, `/status`, `/` endpoints; `FeedHealthCheck` |
+| File                    | Role                                                                                                                                                                          |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Feed/Connection.cs`    | `BackgroundService` — owns the single upstream IBKR WebSocket; reconnects with exponential back-off; publishes `connected`/`authenticated` events on `SystemMessages` channel |
+| `Feed/Snapshots.cs`     | Thread-safe `(conid, field) → value` cache; deduplicates writes; publishes change events; supports `ClearAll()` after prolonged disconnect                                    |
+| `Feed/Subscriptions.cs` | Per-client field tracking; shrinkable field union; `Action<int, string[]?>` callback fires after `UnsubscribeDelay`                                                           |
+| `Feed/Hub.cs`           | `BackgroundService` — accepts browser WebSocket clients; batches ticks; broadcasts system events                                                                              |
+| `Feed/Program.cs`       | DI wiring; `/ws`, `/health`, `/status`, `/` endpoints; `FeedHealthCheck`                                                                                                      |
 
 ### Subscription protocol
 
 **Client → server** (raw text frames):
+
 - `smd+{conid}+{"fields":["31","84"]}` — subscribe
 - `umd+{conid}+{}` — unsubscribe
 
 **Server → client** (JSON envelope):
+
 - `{"topic":"connected","data":true/false}` — upstream connection change
 - `{"topic":"authenticated","data":true/false}` — upstream auth change
 - `{"topic":"batch","data":[{conid,field:val,…}]}` — market-data ticks
@@ -182,8 +195,8 @@ Each client's requested fields are tracked individually in `Subscriptions`. When
 
 ## Reference docs
 
-- `Gateway/README.md` — Gateway project overview, proxied routes, running instructions
-- `CookieGateway/README.md` — CookieGateway project overview, credentials setup, smoke tests
+- `README.md` — proxied API endpoints, smoke test commands, option chain example
+- `Gateway/README.md` — OAuth implementation details, configuration, running instructions
+- `CookieGateway/README.md` — SRP-6 implementation details, credentials setup
 - `Feed/README.md` — Feed project overview, architecture, wire protocol, endpoints
-- `Test.md` — curl and WebSocket smoke test commands
 - Implementation details (session lifecycle, OAuth signing, config fields) live as XML doc comments in `Gateway/Session.cs`, `Gateway/Signer.cs`, `Gateway/Config.cs`
