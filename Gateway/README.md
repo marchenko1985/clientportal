@@ -1,6 +1,4 @@
-![Interactive Brokers](https://ndcdyn.interactivebrokers.com/images/common/logos/ibkr/interactive-brokers.svg)
-
-# IBKR OAuth Gateway
+# OAuth Gateway
 
 A minimal .NET 10 reverse proxy that authenticates [IBKR Web API](https://www.interactivebrokers.com/campus/ibkr-api-page/webapi-doc/) requests using IBKR two-layer OAuth 1.0 (RSA-SHA256 + Diffie-Hellman live session token exchange).
 

@@ -1,3 +1,5 @@
+![Interactive Brokers](https://ndcdyn.interactivebrokers.com/images/common/logos/ibkr/interactive-brokers.svg)
+
 # ClientPortal
 
 IBKR reverse proxy suite — .NET 10. Manages IBKR credentials so callers talk to a plain API without any auth logic on their side.
