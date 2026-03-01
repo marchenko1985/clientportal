@@ -170,6 +170,10 @@ GET /v1/api/iserver/marketdata/snapshot?conids=855005998,855006015&fields=31,84,
 
 Where `31` = last price, `84` = bid, `86` = ask. First call is a preflight; repeat after a moment for data.
 
+## TODO
+
+- [ ] configurable openid connect auth
+
 ## IBKR API Reference
 
 - [Reference](https://www.interactivebrokers.com/campus/ibkr-api-page/webapi-ref/)
