@@ -109,7 +109,7 @@ app.MapGet("/session", (Session s) => new
     state = s.State,
     time = s.LastPingTime,
     last = s.LastTickleResponse,
-    cookie = !string.IsNullOrEmpty(s.SessionCookie)
+    cookie = s.SessionCookie?.Length
 });
 
 app.MapReverseProxy();
