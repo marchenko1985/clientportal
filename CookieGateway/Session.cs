@@ -277,7 +277,8 @@ public class Session(IHttpClientFactory httpClientFactory, IOptions<Config> conf
         dispatchResp.EnsureSuccessStatusCode();
 
         var cookies = loginHandler.CookieContainer.GetCookieHeader(LoginBaseAddress);
-        ArgumentException.ThrowIfNullOrEmpty(cookies, "Login produced no cookies — authentication may have failed silently.");
+        if (string.IsNullOrEmpty(cookies))
+            throw new InvalidOperationException("Login produced no cookies — authentication may have failed silently.");
         SessionCookie = cookies;
         logger.LogInformation("SRP login succeeded, session cookies established.");
 
@@ -320,10 +321,10 @@ public class Session(IHttpClientFactory httpClientFactory, IOptions<Config> conf
         using var tickleRes = await _httpClient.SendAsync(tickleReq, ct);
         tickleRes.EnsureSuccessStatusCode();
         MergeResponseCookies(tickleRes);
-        LastTickleResponse = await tickleRes.Content.ReadFromJsonAsync<TickleResponse>(ct);
-        ArgumentNullException.ThrowIfNull(LastTickleResponse, "Tickle response deserialization returned null.");
+        LastTickleResponse = await tickleRes.Content.ReadFromJsonAsync<TickleResponse>(ct)
+                             ?? throw new InvalidOperationException("Tickle response deserialization returned null.");
         LastPingTime = DateTime.UtcNow;
-        if (LastTickleResponse?.Server.AuthenticationStatus.Authenticated == false)
+        if (LastTickleResponse.Server.AuthenticationStatus.Authenticated == false)
         {
             throw new InvalidOperationException($"Tickle response indicates not authenticated: {LastTickleResponse.Server.AuthenticationStatus.Message ?? LastTickleResponse.Server.AuthenticationStatus.Fail ?? "no message"}");
         }

@@ -49,22 +49,16 @@ builder.Services.AddReverseProxy().LoadFromConfig(builder.Configuration.GetSecti
     var session = ctx.Services.GetRequiredService<Session>();
     var config = ctx.Services.GetRequiredService<IOptions<Config>>().Value;
 
+    // HTTP and WebSocket requests are transformed identically: the session cookie is the
+    // only credential. Unlike Gateway, no Authorization header is built and RequestUri is
+    // left unchanged — cookie auth needs no oauth_token query parameter on the upgrade.
     ctx.AddRequestTransform(transform =>
     {
-        // var isWebSocket = transform.HttpContext.WebSockets.IsWebSocketRequest; // this one does not work
-        var isWebSocket = transform.HttpContext.Request.Headers.Upgrade.ToString().Equals("websocket", StringComparison.OrdinalIgnoreCase);
-
         transform.ProxyRequest.Headers.TryAddWithoutValidation("User-Agent", config.UserAgent);
         transform.ProxyRequest.Headers.Remove("Authorization");
         transform.ProxyRequest.Headers.Remove("Cookie");
         if (!string.IsNullOrEmpty(session.SessionCookie))
             transform.ProxyRequest.Headers.TryAddWithoutValidation("Cookie", session.SessionCookie);
-
-        if (isWebSocket)
-        {
-            // RequestUri is left unchanged — no oauth_token query param needed for cookie-based auth.
-            // if (!allowedOrigins.Contains(ctx.Request.Headers.Origin.ToString())) { ctx.Response.StatusCode = 403; return; }
-        }
 
         return ValueTask.CompletedTask;
     });

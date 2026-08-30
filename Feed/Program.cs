@@ -37,6 +37,9 @@ var app = builder.Build();
 
 if (allowedOrigins.Length > 0) app.UseCors("AllowedOrigins");
 app.UseWebSockets();
+// UseDefaultFiles must precede UseStaticFiles — it rewrites "/" to "/index.html"
+// so the debug UI in wwwroot is reachable at the site root, not only by filename.
+app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.MapGet("/status", (Connection conn, Subscriptions subs, Snapshots snap, Hub hub) => Results.Json(new

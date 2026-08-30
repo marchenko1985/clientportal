@@ -46,7 +46,11 @@ Config__Username=your_ibkr_username Config__Password=your_ibkr_password dotnet r
 dotnet run --project CookieGateway   # http://localhost:5001
 ```
 
-Internal endpoints: `/` (status page), `/health`, `/session` (JSON, localhost only).
+Internal endpoints: `/` (status page), `/health`, `/session` (JSON session diagnostics).
+
+The app does **not** restrict these itself — they listen on every interface Kestrel binds.
+In production nginx puts `/session` behind basic auth; anything else fronting this proxy
+must do the same, since `/session` echoes the live IBKR session token.
 
 ## Key files
 

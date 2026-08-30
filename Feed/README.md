@@ -38,10 +38,10 @@ broadcasts {topic,data} to all clients
 
 | Key | Type | Description |
 |---|---|---|
-| `BaseAddress` | URI | IBKR WebSocket endpoint (e.g. `wss://localhost:5001/v1/api/ws`) |
-| `PingInterval` | TimeSpan | How often to send a `tic` keepalive frame (e.g. `"00:00:30"`) |
-| `BatchInterval` | TimeSpan | How often to flush accumulated ticks to browser clients (e.g. `"00:00:00.200"`) |
-| `UnsubscribeDelay` | TimeSpan | Grace period before an upstream unsubscribe/field-change is sent (e.g. `"00:00:10"`) |
+| `BaseAddress` | URI | IBKR WebSocket endpoint (default `ws://localhost:5001/v1/api/ws` — Feed talks to the local gateway) |
+| `PingInterval` | TimeSpan | How often to send a `tic` keepalive frame (default `"00:01:00"`) |
+| `BatchInterval` | TimeSpan | How often to flush accumulated ticks to browser clients (default `"00:00:00.100"`) |
+| `UnsubscribeDelay` | TimeSpan | Grace period before an upstream unsubscribe/field-change is sent (default `"00:01:00"`) |
 
 ## Wire protocol
 
@@ -76,7 +76,7 @@ A newly connected client immediately receives the current `connected` and `authe
 dotnet run --project Feed   # starts on http://localhost:5002 (set in launchSettings.json)
 ```
 
-Open `http://localhost:5002/demo.html` in a browser for the debug UI.
+Open `http://localhost:5002/` in a browser for the debug UI (`wwwroot/index.html`).
 
 ## Endpoints
 
@@ -85,5 +85,4 @@ Open `http://localhost:5002/demo.html` in a browser for the debug UI.
 | `/ws` | Browser WebSocket entry point |
 | `/health` | ASP.NET health check — Healthy/Degraded/Unhealthy based on upstream state |
 | `/status` | JSON debug snapshot: connection state, subscription details, snapshot cache size, hub client count |
-| `/` | JSON service description |
-| `/demo.html` | Browser debug UI (static file) |
+| `/` | Browser debug UI (`wwwroot/index.html`, served via `UseDefaultFiles`) |

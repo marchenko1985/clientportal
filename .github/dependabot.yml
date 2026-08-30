@@ -1,6 +1,17 @@
 version: 2
 updates:
+  # Each project carries its own PackageReference list, so point Dependabot at the
+  # project directories explicitly rather than relying on solution discovery from "/".
   - package-ecosystem: "nuget"
-    directory: "/"
+    directories:
+      - "/Gateway"
+      - "/CookieGateway"
+      - "/Feed"
     schedule:
       interval: "monthly"
+    groups:
+      # Gateway and CookieGateway pin the same Microsoft.Extensions versions and are
+      # always bumped together — one PR instead of two per release.
+      microsoft-extensions:
+        patterns:
+          - "Microsoft.Extensions.*"

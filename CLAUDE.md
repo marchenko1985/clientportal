@@ -55,8 +55,9 @@ Deploy app changes with:
 Gotchas (see comments in `deploy.sh`):
 
 - Both Gateway and CookieGateway publish an assembly named `gateway` and rsync
-  into the same server directory — the **last rsync block wins** (currently
-  CookieGateway). Comment out the block you don't want to deploy.
+  into the same server directory — the **last rsync block wins**. CookieGateway
+  is deployed today and the Gateway block is commented out; swap the comments to
+  deploy Gateway instead.
 - deploy.sh restarts `gateway` but **not** `feed` — after Feed changes restart
   the feed service manually (clients auto-reconnect).
 - A gateway restart drops and re-initializes the IBKR session — wait for the

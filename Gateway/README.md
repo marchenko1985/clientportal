@@ -29,7 +29,11 @@ Credentials can also be injected as environment variables (e.g. `Config__Consume
 dotnet run --project Gateway   # http://localhost:5001
 ```
 
-Internal endpoints: `/` (status page), `/health`, `/session` (JSON, localhost only).
+Internal endpoints: `/` (status page), `/health`, `/session` (JSON session diagnostics).
+
+The app does **not** restrict these itself — they listen on every interface Kestrel binds.
+In production nginx puts `/session` behind basic auth; anything else fronting this proxy
+must do the same, since `/session` echoes the live IBKR session token.
 
 ## Implementation notes
 

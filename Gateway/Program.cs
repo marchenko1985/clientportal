@@ -68,7 +68,6 @@ builder.Services.AddReverseProxy().LoadFromConfig(builder.Configuration.GetSecti
 
         if (isWebSocket)
         {
-            // if (!allowedOrigins.Contains(ctx.Request.Headers.Origin.ToString())) { ctx.Response.StatusCode = 403; return; }
             transform.ProxyRequest.Headers.Authorization = null;
             transform.ProxyRequest.Headers.Remove("Cookie");
             transform.ProxyRequest.Headers.TryAddWithoutValidation("Cookie", $"api={session.LastTickleResponse?.Session}");

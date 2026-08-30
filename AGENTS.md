@@ -32,6 +32,38 @@ curl -s 'http://localhost:5001/v1/api/iserver/marketdata/history?conid=265598&ba
 curl http://localhost:5001/health
 ```
 
+> **Don't run Gateway/CookieGateway locally against production credentials just to test** — IBKR allows one brokerage session per user, so a local session can kick the production one.
+
+---
+
+## Deployment and production
+
+**This repo is public** — it holds only the Gateway/CookieGateway/Feed projects.
+Never commit secrets here: `appsettings.Development.json` and
+`appsettings.Production.json` are gitignored on purpose. Everything
+server-side — nginx config and njs scripts, systemd units, htpasswd,
+production appsettings, ops playbooks and incident notes — lives in the
+**private** companion repo `marchenko1985/server-optionslab`, which also
+documents how to get SSH access to the box.
+
+Deploy app changes with:
+
+```bash
+./deploy.sh
+```
+
+Gotchas (see comments in `deploy.sh`):
+
+- Both Gateway and CookieGateway publish an assembly named `gateway` and rsync
+  into the same server directory — the **last rsync block wins**. CookieGateway
+  is deployed today and the Gateway block is commented out; swap the comments to
+  deploy Gateway instead.
+- deploy.sh restarts `gateway` but **not** `feed` — after Feed changes restart
+  the feed service manually (clients auto-reconnect).
+- A gateway restart drops and re-initializes the IBKR session — wait for the
+  session initialized log line, then run the smoke tests above against the
+  production host.
+
 ---
 
 ## Architecture
