@@ -63,6 +63,10 @@ Gotchas (see comments in `deploy.sh`):
 - A gateway restart drops and re-initializes the IBKR session — wait for the
   session initialized log line, then run the smoke tests above against the
   production host.
+- Restart `feed` **after** that log line, not before. Feed's upstream is the
+  gateway's own `/v1/api/ws`, so a feed restart during the gateway's session
+  handshake gets an immediate close frame and then sits out a 30 s reconnect
+  back-off. It recovers on its own — it just costs half a minute of no ticks.
 
 ---
 

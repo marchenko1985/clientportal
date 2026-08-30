@@ -11,8 +11,10 @@ ssh optionslab 'systemctl stop gateway'
 # overwritten by a deploy.
 #
 # -t preserves modification times, which is what lets rsync's size+mtime quick
-# check skip unchanged files. Without it every deploy re-transfers the whole
-# self-contained runtime, because the destination mtimes never match.
+# check skip unchanged files outright. Without it the destination mtimes never
+# match, so every deploy opens and checksums all ~110 MB of the self-contained
+# runtime on both ends — delta transfer still keeps the bytes on the wire small,
+# but the work is pointless.
 
 # Gateway
 # rsync -vzt --delete --recursive --exclude='appsettings.Production.json' Gateway/bin/Release/net*/linux-x64/publish/ optionslab:/opt/gateway/
