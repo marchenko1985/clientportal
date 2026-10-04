@@ -24,6 +24,8 @@ Both gateways run on port 5001 and expose the same proxied routes.
 
 ## Quick start
 
+Requires the .NET SDK pinned in [`global.json`](global.json) (10.0.401 or a later 10.0.4xx patch).
+
 ```bash
 dotnet run --project CookieGateway   # or: dotnet run --project Gateway
 ```
