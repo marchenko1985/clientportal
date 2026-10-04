@@ -352,7 +352,10 @@ public class Connection(Snapshots snapshots, IOptions<Config> options, ILogger<C
     ///     <description>
     ///       Market-data tick for a contract. Every JSON key whose name is a pure
     ///       integer string (e.g. <c>"31"</c>, <c>"84"</c>) is treated as an IBKR
-    ///       field code. The raw string value is written to <see cref="Snapshots"/>.
+    ///       field code. String values are written to <see cref="Snapshots"/> as-is;
+    ///       numeric values (IBKR sends some fields, e.g. <c>"83"</c> change %, as
+    ///       JSON numbers) are written as their raw JSON text, so clients always
+    ///       receive strings. Booleans, nulls, objects and arrays are ignored.
     ///     </description>
     ///   </item>
     /// </list>
@@ -389,10 +392,14 @@ public class Connection(Snapshots snapshots, IOptions<Config> options, ILogger<C
                 var ticks = DateTime.UtcNow.Ticks;
                 foreach (var (key, value) in data)
                 {
-                    if (int.TryParse(key, out _) && value is JsonValue jv && jv.TryGetValue<string>(out var raw))
+                    if (!int.TryParse(key, out _) || value is not JsonValue jv) continue;
+                    var raw = jv.GetValueKind() switch
                     {
-                        snapshots.Write(conid, key, raw, ticks);
-                    }
+                        JsonValueKind.String => jv.GetValue<string>(),
+                        JsonValueKind.Number => jv.ToJsonString(),
+                        _ => null,
+                    };
+                    if (raw != null) snapshots.Write(conid, key, raw, ticks);
                 }
             }
         }
