@@ -13,6 +13,13 @@ dotnet run --project Feed          # run — launchSettings.json sets http://loc
 
 `TreatWarningsAsErrors=True` is set in projects — warnings fail the build.
 
+`global.json` pins the SDK (`rollForward: latestPatch`). It matters more than usual
+here: deploys are **self-contained**, so they bundle the runtime of whichever SDK
+built them — a stale local SDK ships a stale, unpatched runtime to production.
+When a new .NET 10 patch is released, install its SDK, bump `global.json`, and
+redeploy. Check what is live with
+`ssh optionslab 'grep -o -m1 "NETCore.App.Runtime.linux-x64/[0-9.]*" /opt/gateway/gateway.deps.json'`.
+
 ## Agreements
 
 We have decided to store docs as xml doc strings close to source code, if code edited make sure to update its docs as well to keep them up to date.
@@ -137,15 +144,15 @@ services.AddRedaction(rb => rb.SetRedactor<NullRedactor>(
     DataClassificationSet.FromDataClassification(DataClassification.Unknown)));
 ```
 
-### Production environmnet gotcha
+### Production environment gotcha
 
-Attempts to run:
+Running:
 
 ```bash
 ASPNETCORE_ENVIRONMENT=Production dotnet run --project Gateway
 ```
 
-will not run in app in production environment, launchSettings.json takes preference and overrides it back to production, if needed for temporary testing - just edit launchSettings.json instead
+does **not** start the app in Production: `dotnet run` applies the launch profile from `launchSettings.json`, and its `ASPNETCORE_ENVIRONMENT=Development` overrides the shell variable. For temporary testing add `--no-launch-profile` (then pass `--urls http://localhost:5001` too, since the port also comes from the profile).
 
 ### Middleware order
 

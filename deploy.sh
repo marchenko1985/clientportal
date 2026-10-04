@@ -1,3 +1,7 @@
+#!/usr/bin/env bash
+# Stop at the first failure: a failed publish must not go on to stop the gateway.
+set -euo pipefail
+
 # publish
 dotnet publish -c Release -r linux-x64 --self-contained true
 

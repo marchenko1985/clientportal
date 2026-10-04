@@ -68,6 +68,8 @@ All outbound messages use a typed JSON envelope:
 | `authenticated` | `true` / `false` | IBKR `sts` authentication confirmed or lost |
 | `batch` | `[{conid, "31":"182.45", …}]` | Tick update for subscribed contracts (batched per `BatchInterval`) |
 
+Field values are always JSON strings. IBKR sends most fields as strings but some (e.g. `83`, change %) as JSON numbers; Feed forwards those as their raw JSON text (`1.03` → `"1.03"`). Booleans and nulls from upstream are dropped.
+
 A newly connected client immediately receives the current `connected` and `authenticated` state so it is never left uninformed.
 
 ## Running
